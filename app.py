@@ -26,7 +26,7 @@ div[data-testid="stRadio"]>div>label{
 div[data-testid="stRadio"]>div>label:has(input:checked){
     background:#c8f135!important;border-color:#c8f135!important;
     color:#0a0c10!important;font-weight:500!important;}
-div[data-testid="stRadio"]>div>label>div{display:none!important;}
+div[data-testid="stRadio"]>div>label>div>div:has(input[type="radio"]){display:none!important;}
 .block-container{padding:2rem 2rem 1rem!important;}
 h1,h2,h3{font-family:'Syne',sans-serif!important;}
 .stSpinner>div{border-top-color:#c8f135!important;}

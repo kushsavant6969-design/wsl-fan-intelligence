@@ -5,6 +5,7 @@ import requests
 import numpy as np
 
 YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 CACHE_DIR = Path(".cache")
 CACHE_DIR.mkdir(exist_ok=True)
 CACHE_TTL = 6 * 3600
@@ -50,6 +51,14 @@ WSL_CLUBS = {
         "form": ["D","W","L","W","W"],
         "avg_attendance_pct": 71,
     },
+    "WSL Overall": {
+        "search_query": "Women's Super League WSL highlights 2024",
+        "reddit_terms": ["WSL", "Women's Super League", "FAWSL"],
+        "color": "#c8f135", "stadium": "Various", "capacity": 13006,
+        "rivals": [],
+        "form": ["W","D","W","L","W"],
+        "avg_attendance_pct": 75,
+    },
 }
 
 FIXTURES = {
@@ -77,6 +86,11 @@ FIXTURES = {
         {"opponent":"Aston Villa W","date":"2025-04-19","home":False,"att_pct":74,"is_rival":False,"days_away":1},
         {"opponent":"Chelsea W","date":"2025-04-26","home":False,"att_pct":68,"is_rival":False,"days_away":8},
         {"opponent":"Arsenal W","date":"2025-05-04","home":False,"att_pct":81,"is_rival":True,"days_away":16},
+    ],
+    "WSL Overall": [
+        {"opponent":"Arsenal W vs Chelsea W","date":"2025-04-20","home":True,"att_pct":94,"is_rival":True,"days_away":2},
+        {"opponent":"Brighton W vs Aston Villa W","date":"2025-04-19","home":True,"att_pct":74,"is_rival":False,"days_away":1},
+        {"opponent":"Man City W vs Aston Villa W","date":"2025-05-01","home":True,"att_pct":61,"is_rival":False,"days_away":13},
     ],
 }
 
@@ -168,13 +182,19 @@ def _simulated_videos(club_name):
 
 def _simulated_sentiment(club_name):
     random.seed(hash(club_name + "sent2025") % 9999)
-    base = {"Arsenal W":74,"Chelsea W":69,"Man City W":58,"Aston Villa W":67,"Brighton W":71}.get(club_name, 65)
+    base = {"Arsenal W":74,"Chelsea W":69,"Man City W":58,"Aston Villa W":67,"Brighton W":71,"WSL Overall":68}.get(club_name, 65)
     score = base + random.randint(-2, 2)
     pos = random.randint(48, 68)
     neg = random.randint(8, 22)
+    # Simulated 30-day-ago score (deterministic per club)
+    seed_30d = hash(club_name + "sent30d2025") % 9999
+    rng = random.Random(seed_30d)
+    delta_30d = rng.randint(-9, 7)
+    score_30d_ago = max(35, min(95, score - delta_30d))
     return {
         "score": score, "post_count": random.randint(60, 200),
         "positive_pct": pos, "negative_pct": neg, "neutral_pct": 100-pos-neg,
+        "score_30d_ago": score_30d_ago,
         "source": "simulated",
     }
 
@@ -210,9 +230,12 @@ def get_sentiment_data(club_name):
         normalized = max(35, min(95, normalized))
         pos = int(sum(1 for s in scores if s > 0.05) / len(scores) * 100)
         neg = int(sum(1 for s in scores if s < -0.05) / len(scores) * 100)
+        random.seed(hash(club_name + "sent30d2025") % 9999)
+        score_30d_ago = max(35, min(95, normalized + random.randint(-9, 7)))
         result = {
             "score": normalized, "post_count": len(posts),
             "positive_pct": pos, "negative_pct": neg, "neutral_pct": 100-pos-neg,
+            "score_30d_ago": score_30d_ago,
             "source": "live",
         }
         _cache_set(cache_key, result)
@@ -226,7 +249,7 @@ def get_sentiment_trend(club_name, days=14):
     if cached:
         return cached
     random.seed(hash(club_name + "trend2025") % 9999)
-    base = {"Arsenal W":68,"Chelsea W":65,"Man City W":54,"Aston Villa W":61,"Brighton W":67}.get(club_name, 63)
+    base = {"Arsenal W":68,"Chelsea W":65,"Man City W":54,"Aston Villa W":61,"Brighton W":67,"WSL Overall":63}.get(club_name, 63)
     dates = [(datetime.now()-timedelta(days=days-i)).strftime("%b %d") for i in range(days)]
     def wave(offset, vol):
         v, vals = base+offset, []
@@ -238,11 +261,94 @@ def get_sentiment_trend(club_name, days=14):
     _cache_set(cache_key, result)
     return result
 
+def get_fan_cohorts(club_name):
+    rng = random.Random(hash(club_name + "cohorts2025") % 99999)
+    base_sent = {"Arsenal W":74,"Chelsea W":69,"Man City W":58,"Aston Villa W":67,"Brighton W":71,"WSL Overall":68}.get(club_name, 65)
+    form = WSL_CLUBS.get(club_name, {}).get("form", [])
+    losses = form.count("L") if form else 1
+
+    def risk(base, loss_mult, spread=5):
+        return min(95, max(10, base - base_sent * 0.3 + losses * loss_mult + rng.randint(-spread, spread)))
+
+    return [
+        {
+            "name": "18–24 Casual",
+            "size_pct": rng.randint(18, 26),
+            "risk_score": int(risk(72, 9)),
+            "engagement": rng.randint(38, 68),
+            "action": "TikTok + Instagram push · £5 off first ticket",
+        },
+        {
+            "name": "25–34 Regular",
+            "size_pct": rng.randint(24, 32),
+            "risk_score": int(risk(52, 6)),
+            "engagement": rng.randint(55, 80),
+            "action": "Early-bird season ticket offer",
+        },
+        {
+            "name": "35–49 Loyalist",
+            "size_pct": rng.randint(20, 28),
+            "risk_score": int(risk(38, 4)),
+            "engagement": rng.randint(68, 90),
+            "action": "Renewal reminder + hospitality upgrade",
+        },
+        {
+            "name": "50+ Veteran",
+            "size_pct": rng.randint(12, 20),
+            "risk_score": int(risk(34, 5)),
+            "engagement": rng.randint(62, 85),
+            "action": "Loyalty recognition programme",
+        },
+        {
+            "name": "Lapsed Buyers",
+            "size_pct": rng.randint(8, 16),
+            "risk_score": min(95, int(70 + losses * 5 + rng.randint(0, 10))),
+            "engagement": rng.randint(12, 32),
+            "action": "Win-back email: 20% discount + personalised message",
+        },
+        {
+            "name": "First-Timers",
+            "size_pct": rng.randint(4, 10),
+            "risk_score": int(risk(58, 3, 10)),
+            "engagement": rng.randint(32, 60),
+            "action": "Welcome series + buddy ticket offer",
+        },
+    ]
+
+def get_claude_recommendation(club_name, signal_title, signal_desc):
+    if not ANTHROPIC_API_KEY:
+        return None
+    cache_key = f"claude_{hashlib.md5((club_name + signal_title).encode()).hexdigest()}"
+    cached = _cache_get(cache_key)
+    if cached:
+        return cached
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        prompt = (
+            f"You are a sports marketing strategist for WSL (Women's Super League) clubs.\n\n"
+            f"Club: {club_name}\n"
+            f"HIGH-priority signal: {signal_title}\n"
+            f"Context: {signal_desc}\n\n"
+            f"Generate a specific, actionable fan engagement recommendation. Be concise and concrete.\n\n"
+            f"Respond in exactly this format (4 lines):\n"
+            f"TARGET: [specific fan segment]\n"
+            f"MESSAGE: [the key message or offer — 1 sentence]\n"
+            f"TIMING: [when to execute — be specific]\n"
+            f"CHANNEL: [which channel(s) to use]"
+        )
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=200,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        result = response.content[0].text.strip()
+        _cache_set(cache_key, result)
+        return result
+    except Exception:
+        return None
+
 def compute_fan_risk_score(club_name, sentiment_score, fixtures, form):
-    """
-    The core engine. Combines sentiment + form + fixture context + urgency.
-    Returns per-fixture risk scores and an overall club risk level.
-    """
     losses = form.count("L")
     draws  = form.count("D")
     form_score = max(0, 100 - (losses * 20) - (draws * 8))
@@ -284,7 +390,7 @@ def compute_fan_risk_score(club_name, sentiment_score, fixtures, form):
             "adjusted_ticket": adjusted_ticket,
         })
 
-    overall = round(np.mean([r["risk_score"] for r in fixture_risks]), 1)
+    overall = round(np.mean([r["risk_score"] for r in fixture_risks]), 1) if fixture_risks else 50.0
     return {"fixture_risks": fixture_risks, "overall_risk": overall}
 
 def generate_signals(club_name, sentiment, risk_data, content_views, league):
@@ -354,6 +460,36 @@ def generate_signals(club_name, sentiment, risk_data, content_views, league):
 
     return signals[:4]
 
+def generate_wsl_overall_signals(club_sentiments):
+    sorted_clubs = sorted(club_sentiments, key=lambda x: x[1])
+    lowest, highest = sorted_clubs[0], sorted_clubs[-1]
+    return [
+        {
+            "priority":"HIGH",
+            "title": f"Sentiment gap: {highest[0]} ({highest[1]}) vs {lowest[0]} ({lowest[1]})",
+            "desc": f"{highest[0]} leads league sentiment at {highest[1]}/100; {lowest[0]} trails at {lowest[1]}/100 — {highest[1]-lowest[1]}pt gap highlights uneven fan health.",
+            "source":"League Intelligence","action":"Target low-sentiment clubs with cross-promotion",
+        },
+        {
+            "priority":"HIGH",
+            "title":"League-wide attendance below 85% target",
+            "desc":"Average capacity utilisation across WSL clubs is 75.4%. Aston Villa's 42k capacity skews the aggregate — targeted pricing review needed.",
+            "source":"Attendance Intelligence","action":"Review dynamic pricing at underperforming venues",
+        },
+        {
+            "priority":"MED",
+            "title":"Derby weekend — peak engagement window",
+            "desc":"Arsenal W vs Chelsea W (Apr 20) is the highest-demand fixture of the run-in. League-wide content opportunity to grow new audiences.",
+            "source":"Fixture Intelligence","action":"League-wide social campaign around the derby",
+        },
+        {
+            "priority":"OPT",
+            "title":"WSL content reach concentrated in top 2 clubs",
+            "desc":"Arsenal W and Chelsea W account for ~65% of total WSL YouTube views. Mid-table clubs underrepresented in league narrative.",
+            "source":"Content Analysis","action":"Cross-promote mid-table clubs via league channel",
+        },
+    ]
+
 def get_content_engagement(club_name):
     videos = fetch_youtube_videos(club_name, max_results=6)
     total_views = sum(v["views"] for v in videos)
@@ -382,6 +518,9 @@ def get_ticket_demand(club_name):
     return {"demand_index": demand_index, "fixtures": processed}
 
 def get_full_club_data(club_name):
+    if club_name == "WSL Overall":
+        return _get_wsl_overall_data()
+
     sentiment  = get_sentiment_data(club_name)
     content    = get_content_engagement(club_name)
     tickets    = get_ticket_demand(club_name)
@@ -390,6 +529,7 @@ def get_full_club_data(club_name):
     form       = WSL_CLUBS[club_name]["form"]
     risk_data  = compute_fan_risk_score(club_name, sentiment["score"], tickets["fixtures"], form)
     signals    = generate_signals(club_name, sentiment, risk_data, content["total_views"], league)
+    cohorts    = get_fan_cohorts(club_name)
     risk_alerts = sum(1 for s in signals if s["priority"] == "HIGH")
     return {
         "club": club_name,
@@ -401,6 +541,7 @@ def get_full_club_data(club_name):
         "risk_data": risk_data,
         "league": league,
         "form": form,
+        "cohorts": cohorts,
         "kpis": {
             "sentiment_score": sentiment["score"],
             "content_reach": content["reach_label"],
@@ -412,4 +553,80 @@ def get_full_club_data(club_name):
             "sentiment": sentiment.get("source","simulated"),
             "content": content.get("source","simulated"),
         }
+    }
+
+def _get_wsl_overall_data():
+    real_clubs = [c for c in WSL_CLUBS if c != "WSL Overall"]
+
+    # Aggregate sentiment
+    sentiments = [_simulated_sentiment(c) for c in real_clubs]
+    avg_score = int(np.mean([s["score"] for s in sentiments]))
+    avg_pos   = int(np.mean([s["positive_pct"] for s in sentiments]))
+    avg_neg   = int(np.mean([s["negative_pct"] for s in sentiments]))
+    rng_30d   = random.Random(hash("WSL Overall" + "sent30d2025") % 99999)
+    score_30d = max(35, min(95, avg_score + rng_30d.randint(-6, 6)))
+    sentiment = {
+        "score": avg_score,
+        "post_count": sum(s["post_count"] for s in sentiments),
+        "positive_pct": avg_pos,
+        "negative_pct": avg_neg,
+        "neutral_pct": 100 - avg_pos - avg_neg,
+        "score_30d_ago": score_30d,
+        "source": "simulated",
+    }
+
+    # Aggregate content
+    all_videos = []
+    total_views = 0
+    for c in real_clubs:
+        ce = get_content_engagement(c)
+        total_views += ce["total_views"]
+        all_videos.extend(ce["top_videos"][:2])
+    all_videos.sort(key=lambda x: x["views"], reverse=True)
+    reach_label = f"{total_views/1_000_000:.1f}M" if total_views >= 1_000_000 else f"{total_views//1000}K"
+    total_likes = sum(v["likes"] for v in all_videos)
+    content = {
+        "total_views": total_views,
+        "reach_label": reach_label,
+        "engagement_rate": round(total_likes / total_views * 100, 2) if total_views else 0,
+        "top_videos": all_videos[:5],
+        "source": "simulated",
+    }
+
+    # Fixtures
+    tickets = get_ticket_demand("WSL Overall")
+
+    # Trend: average across clubs
+    trends = [get_sentiment_trend(c) for c in real_clubs]
+    dates = trends[0]["dates"]
+    n = len(dates)
+    avg_trend = {"dates": dates}
+    for ch in ["twitter","instagram","youtube","reddit"]:
+        avg_trend[ch] = [round(np.mean([t[ch][i] for t in trends]), 1) for i in range(n)]
+
+    form = WSL_CLUBS["WSL Overall"]["form"]
+    risk_data = compute_fan_risk_score("WSL Overall", avg_score, tickets["fixtures"], form)
+    signals = generate_wsl_overall_signals([(real_clubs[i], sentiments[i]["score"]) for i in range(len(real_clubs))])
+    cohorts = get_fan_cohorts("WSL Overall")
+    risk_alerts = sum(1 for s in signals if s["priority"] == "HIGH")
+
+    return {
+        "club": "WSL Overall",
+        "sentiment": sentiment,
+        "content": content,
+        "tickets": tickets,
+        "trend": avg_trend,
+        "signals": signals,
+        "risk_data": risk_data,
+        "league": {"position":"—","pts":"—","gd":"—"},
+        "form": form,
+        "cohorts": cohorts,
+        "kpis": {
+            "sentiment_score": avg_score,
+            "content_reach": reach_label,
+            "demand_index": tickets["demand_index"],
+            "risk_alerts": risk_alerts,
+            "overall_risk": risk_data["overall_risk"],
+        },
+        "data_sources": {"sentiment":"simulated","content":"simulated"},
     }

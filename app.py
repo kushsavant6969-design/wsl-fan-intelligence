@@ -4,7 +4,7 @@ import plotly.express as px
 import pandas as pd
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
-from data import get_full_club_data, get_claude_recommendation, WSL_CLUBS, WSL_LEAGUE_CONTEXT
+from data import get_full_club_data, get_claude_recommendation, WSL_CLUBS, WSL_LEAGUE_CONTEXT, PLAYER_DATA
 
 st.set_page_config(page_title="WSL Fan Intelligence | Two Circles Prototype",
     page_icon="⚽", layout="wide", initial_sidebar_state="collapsed")
@@ -105,17 +105,21 @@ st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 with st.spinner(f"Pulling fan intelligence for {selected}..."):
     d = get_full_club_data(selected)
 
-kpis    = d["kpis"]
-sent    = d["sentiment"]
-content = d["content"]
-tickets = d["tickets"]
-trend   = d["trend"]
-signals = d["signals"]
-risk    = d["risk_data"]
-league  = d["league"]
-form    = d["form"]
-sources = d["data_sources"]
-cohorts = d["cohorts"]
+kpis             = d["kpis"]
+sent             = d["sentiment"]
+content          = d["content"]
+tickets          = d["tickets"]
+trend            = d["trend"]
+signals          = d["signals"]
+risk             = d["risk_data"]
+league           = d["league"]
+form             = d["form"]
+sources          = d["data_sources"]
+cohorts          = d["cohorts"]
+att_preds        = d["attendance_predictions"]
+churn_risks      = d["churn_risks"]
+player_influence = d["player_influence"]
+sponsor_exposure = d["sponsor_exposure"]
 
 # ── Source legend ─────────────────────────────────────────────────────────────
 def pill(label, live):
@@ -366,6 +370,201 @@ for i, (club, data) in enumerate(league_clubs.items()):
             <div style="font-size:11px;color:#6b7280">{data['pts']} pts</div>
             <div style="font-size:10px;color:#4b5563;margin-top:4px">{form_str}</div>
         </div>""", unsafe_allow_html=True)
+
+# ── Feature 1: Attendance Prediction Engine ───────────────────────────────────
+st.markdown("<hr style='border-color:#1f2937;margin:16px 0 16px'>", unsafe_allow_html=True)
+st.markdown("""
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+    <span style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0">Attendance Prediction Engine · per fixture</span>
+    <span style="background:#1c1500;color:#f59e0b;border:1px solid #92400e;font-size:9px;padding:2px 8px;border-radius:10px">◯ Simulated model</span>
+</div>""", unsafe_allow_html=True)
+
+if att_preds:
+    att_cols = st.columns(len(att_preds))
+    for i, ap in enumerate(att_preds):
+        pred = ap["predicted_pct"]
+        low  = ap["confidence_low"]
+        high = ap["confidence_high"]
+        at_risk = ap["at_risk"]
+        bar_c = "#ef4444" if at_risk else "#c8f135" if pred >= 85 else "#3d9cf0"
+        bar_bg = "#1f0a0a" if at_risk else "#0a1f0a" if pred >= 85 else "#0a1020"
+        rival_tag = ' <span style="font-size:9px;color:#3d9cf0;border:1px solid #3d9cf0;padding:1px 5px;border-radius:4px">DERBY</span>' if ap["is_rival"] else ""
+        risk_tag = '<div style="background:#1f0a0a;border:1px solid #ef4444;color:#ef4444;font-size:9px;padding:3px 8px;border-radius:6px;text-align:center;margin-bottom:8px;letter-spacing:.05em">⚠ AT RISK — BELOW 70%</div>' if at_risk else ""
+        home_icon = "🏠" if ap["home"] else "✈"
+        d = ap["drivers"]
+        with att_cols[i]:
+            st.markdown(f"""
+            <div style="background:#13161d;border:1px solid {'#ef4444' if at_risk else '#1f2937'};border-top:3px solid {bar_c};border-radius:8px;padding:14px 14px">
+                {risk_tag}
+                <div style="font-size:11px;color:#e8eaf0;margin-bottom:4px">{home_icon} vs {ap['opponent']}{rival_tag}</div>
+                <div style="font-size:10px;color:#4b5563;margin-bottom:10px">{ap['date']} · {ap['days_away']}d away</div>
+                <div style="font-family:Syne,sans-serif;font-size:32px;font-weight:800;color:{bar_c};line-height:1">{pred}%</div>
+                <div style="font-size:10px;color:#6b7280;margin-bottom:8px">predicted capacity fill</div>
+                <div style="font-size:10px;color:#4b5563;margin-bottom:6px">Confidence: {low}% – {high}%</div>
+                <div style="background:#0a0c10;border-radius:4px;height:5px;overflow:hidden;margin-bottom:10px;position:relative">
+                    <div style="position:absolute;left:{low}%;width:{high-low}%;height:100%;background:#374151;border-radius:4px"></div>
+                    <div style="position:absolute;left:0;width:{pred}%;height:100%;background:{bar_c};border-radius:4px"></div>
+                </div>
+                <div style="font-size:9px;color:#374151;line-height:1.7">
+                    Hist avg: {d['historical']}% &nbsp;|&nbsp;
+                    Sentiment: {'+' if d['sentiment_adj']>=0 else ''}{d['sentiment_adj']}%<br>
+                    Derby bonus: +{d['derby_bonus']}% &nbsp;|&nbsp;
+                    Form: {d['form_penalty']}%
+                </div>
+            </div>""", unsafe_allow_html=True)
+else:
+    st.markdown('<div style="color:#4b5563;font-size:11px">No fixture data available.</div>', unsafe_allow_html=True)
+
+# ── Feature 2: Fan Churn Risk Score ───────────────────────────────────────────
+st.markdown("<hr style='border-color:#1f2937;margin:20px 0 16px'>", unsafe_allow_html=True)
+st.markdown("""
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+    <span style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0">Fan Churn Risk Score · per cohort</span>
+    <span style="background:#1c1500;color:#f59e0b;border:1px solid #92400e;font-size:9px;padding:2px 8px;border-radius:10px">◯ Simulated model</span>
+</div>""", unsafe_allow_html=True)
+
+churn_cols = st.columns(len(churn_risks))
+for i, cr in enumerate(churn_risks):
+    churn = cr["churn_pct"]
+    rl    = cr["risk_level"]
+    rc    = "#ef4444" if rl=="HIGH" else "#f59e0b" if rl=="MED" else "#22c55e"
+    rb    = "#1f0a0a" if rl=="HIGH" else "#1c1500" if rl=="MED" else "#0a1f0a"
+    with churn_cols[i]:
+        st.markdown(f"""
+        <div style="background:#13161d;border:1px solid #1f2937;border-top:3px solid {rc};border-radius:8px;padding:14px 12px;height:100%">
+            <div style="font-size:11px;color:#e8eaf0;font-weight:500;margin-bottom:8px">{cr['name']}</div>
+            <div style="font-family:Syne,sans-serif;font-size:28px;font-weight:800;color:{rc};line-height:1">{churn}%</div>
+            <div style="font-size:9px;color:{rc};margin-bottom:8px;letter-spacing:.05em">CHURN RISK</div>
+            <div style="background:#0a0c10;border-radius:3px;height:4px;margin-bottom:10px;overflow:hidden">
+                <div style="width:{churn}%;height:100%;background:{rc};border-radius:3px"></div>
+            </div>
+            <div style="background:{rb};border:1px solid {rc}22;border-radius:5px;padding:6px 8px">
+                <div style="font-size:8px;color:{rc};letter-spacing:.05em;margin-bottom:3px">RETENTION ACTION</div>
+                <div style="font-size:9px;color:#9ca3af;line-height:1.5">→ {cr['retention_action']}</div>
+            </div>
+        </div>""", unsafe_allow_html=True)
+
+# ── Feature 3: Player Sentiment Influence ─────────────────────────────────────
+st.markdown("<hr style='border-color:#1f2937;margin:20px 0 16px'>", unsafe_allow_html=True)
+st.markdown("""
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+    <span style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0">Player Sentiment Influence · ranked by marketing value</span>
+    <span style="background:#1c1500;color:#f59e0b;border:1px solid #92400e;font-size:9px;padding:2px 8px;border-radius:10px">◯ Simulated data</span>
+</div>""", unsafe_allow_html=True)
+
+if player_influence:
+    top_player = player_influence[0]
+    p1c, p2c = st.columns([1.1, 2])
+
+    with p1c:
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,#0f1a08,#13161d);border:1px solid #c8f135;border-radius:10px;padding:18px 16px;height:100%">
+            <div style="font-size:9px;color:#c8f135;letter-spacing:.08em;margin-bottom:10px">✦ TOP SENTIMENT PLAYER</div>
+            <div style="font-family:Syne,sans-serif;font-size:20px;font-weight:800;color:#c8f135;margin-bottom:2px">{top_player['name']}</div>
+            <div style="font-size:10px;color:#6b7280;margin-bottom:14px">{top_player['position']} · {top_player['club']}</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                <div style="background:#0a0c10;border-radius:6px;padding:8px;text-align:center">
+                    <div style="font-size:9px;color:#6b7280;margin-bottom:2px">Sentiment lift</div>
+                    <div style="font-family:Syne,sans-serif;font-size:18px;font-weight:700;color:#c8f135">+{top_player['sentiment_lift']}</div>
+                </div>
+                <div style="background:#0a0c10;border-radius:6px;padding:8px;text-align:center">
+                    <div style="font-size:9px;color:#6b7280;margin-bottom:2px">Engagement ×</div>
+                    <div style="font-family:Syne,sans-serif;font-size:18px;font-weight:700;color:#3d9cf0">{top_player['engagement_mult']}x</div>
+                </div>
+                <div style="background:#0a0c10;border-radius:6px;padding:8px;text-align:center">
+                    <div style="font-size:9px;color:#6b7280;margin-bottom:2px">Merch index</div>
+                    <div style="font-family:Syne,sans-serif;font-size:18px;font-weight:700;color:#a78bfa">{top_player['merch_index']}</div>
+                </div>
+                <div style="background:#0a0c10;border-radius:6px;padding:8px;text-align:center">
+                    <div style="font-size:9px;color:#6b7280;margin-bottom:2px">Mktg value</div>
+                    <div style="font-family:Syne,sans-serif;font-size:18px;font-weight:700;color:#f59e0b">{top_player['marketing_value']}</div>
+                </div>
+            </div>
+        </div>""", unsafe_allow_html=True)
+
+    with p2c:
+        header_html = """
+        <div style="display:grid;grid-template-columns:28px 1fr 80px 80px 90px 80px;gap:6px;padding:0 14px;margin-bottom:6px">
+            <div style="font-size:9px;color:#4b5563">#</div>
+            <div style="font-size:9px;color:#4b5563">PLAYER</div>
+            <div style="font-size:9px;color:#4b5563;text-align:center">SENT LIFT</div>
+            <div style="font-size:9px;color:#4b5563;text-align:center">ENG ×</div>
+            <div style="font-size:9px;color:#4b5563;text-align:center">MERCH IDX</div>
+            <div style="font-size:9px;color:#4b5563;text-align:center">MKTG VAL</div>
+        </div>"""
+        st.markdown(header_html, unsafe_allow_html=True)
+        for rank, p in enumerate(player_influence, 1):
+            is_top = rank == 1
+            bg = "#0f1a08" if is_top else "#13161d"
+            border = "#c8f135" if is_top else "#1f2937"
+            name_color = "#c8f135" if is_top else "#e8eaf0"
+            merch_bar_w = p['merch_index']
+            st.markdown(f"""
+            <div style="background:{bg};border:1px solid {border};border-radius:7px;padding:10px 14px;margin-bottom:6px;
+                        display:grid;grid-template-columns:28px 1fr 80px 80px 90px 80px;gap:6px;align-items:center">
+                <div style="font-family:Syne,sans-serif;font-size:13px;font-weight:700;color:#374151">#{rank}</div>
+                <div>
+                    <div style="font-size:11px;color:{name_color};font-weight:500">{p['name']}</div>
+                    <div style="font-size:9px;color:#4b5563">{p['position']} · {p['club']}</div>
+                </div>
+                <div style="text-align:center;font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#c8f135">+{p['sentiment_lift']}</div>
+                <div style="text-align:center;font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#3d9cf0">{p['engagement_mult']}x</div>
+                <div style="text-align:center">
+                    <div style="background:#0a0c10;border-radius:3px;height:4px;margin-bottom:3px;overflow:hidden">
+                        <div style="width:{merch_bar_w}%;height:100%;background:#a78bfa;border-radius:3px"></div>
+                    </div>
+                    <div style="font-size:10px;color:#a78bfa">{p['merch_index']}</div>
+                </div>
+                <div style="text-align:center;font-family:Syne,sans-serif;font-size:13px;font-weight:700;color:#f59e0b">{p['marketing_value']}</div>
+            </div>""", unsafe_allow_html=True)
+else:
+    st.markdown('<div style="color:#4b5563;font-size:11px">No player data available.</div>', unsafe_allow_html=True)
+
+# ── Feature 4: Sponsor Exposure Score ─────────────────────────────────────────
+st.markdown("<hr style='border-color:#1f2937;margin:20px 0 16px'>", unsafe_allow_html=True)
+st.markdown("""
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+    <span style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0">Sponsor Exposure Score · per fixture</span>
+    <span style="background:#1c1500;color:#f59e0b;border:1px solid #92400e;font-size:9px;padding:2px 8px;border-radius:10px">◯ Simulated model</span>
+</div>""", unsafe_allow_html=True)
+
+sp_fixtures = sponsor_exposure["fixtures"]
+league_avg  = sponsor_exposure["league_avg"]
+
+if sp_fixtures:
+    sp_cols = st.columns(len(sp_fixtures))
+    for i, sf in enumerate(sp_fixtures):
+        idx  = sf["sponsor_index"]
+        vs_b = sf["vs_benchmark"]
+        is_p = sf["is_premium"]
+        idx_c = "#c8f135" if is_p else "#3d9cf0" if idx >= 55 else "#6b7280"
+        vs_c  = "#22c55e" if vs_b >= 0 else "#ef4444"
+        home_icon = "🏠" if sf["home"] else "✈"
+        rival_tag = ' <span style="font-size:9px;color:#f59e0b">DERBY</span>' if sf["is_rival"] else ""
+        premium_tag = '<div style="background:#0f1a08;border:1px solid #c8f135;color:#c8f135;font-size:9px;padding:3px 8px;border-radius:6px;text-align:center;margin-bottom:10px;letter-spacing:.05em">★ PREMIUM SLOT</div>' if is_p else ""
+        gauge_pct = idx  # 0–100
+        with sp_cols[i]:
+            st.markdown(f"""
+            <div style="background:#13161d;border:1px solid {'#c8f135' if is_p else '#1f2937'};border-radius:8px;padding:14px 14px">
+                {premium_tag}
+                <div style="font-size:11px;color:#e8eaf0;margin-bottom:4px">{home_icon} vs {sf['opponent']}{rival_tag}</div>
+                <div style="font-size:10px;color:#4b5563;margin-bottom:10px">{sf['date']}</div>
+                <div style="font-family:Syne,sans-serif;font-size:32px;font-weight:800;color:{idx_c};line-height:1">{idx}</div>
+                <div style="font-size:10px;color:#6b7280;margin-bottom:8px">sponsor value index / 100</div>
+                <div style="background:#0a0c10;border-radius:4px;height:6px;overflow:hidden;margin-bottom:10px">
+                    <div style="width:{gauge_pct}%;height:100%;background:{idx_c};border-radius:4px"></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                    <div style="background:#0a0c10;border-radius:5px;padding:7px;text-align:center">
+                        <div style="font-size:9px;color:#4b5563;margin-bottom:2px">vs WSL avg ({league_avg})</div>
+                        <div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:{vs_c}">{'+' if vs_b>=0 else ''}{vs_b}</div>
+                    </div>
+                    <div style="background:#0a0c10;border-radius:5px;padding:7px;text-align:center">
+                        <div style="font-size:9px;color:#4b5563;margin-bottom:2px">Broadcast reach</div>
+                        <div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:#a78bfa">{sf['broadcast_reach']}</div>
+                    </div>
+                </div>
+            </div>""", unsafe_allow_html=True)
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("""

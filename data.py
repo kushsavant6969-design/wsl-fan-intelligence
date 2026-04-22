@@ -102,6 +102,46 @@ WSL_LEAGUE_CONTEXT = {
     "Brighton W":    {"position":5,"pts":33,"gd":6, "last_5_form":["D","W","L","W","W"],"goals_for":35,"goals_against":29},
 }
 
+# ── Player sentiment influence data (simulated) ────────────────────────────────
+PLAYER_DATA = {
+    "Arsenal W": [
+        {"name": "Vivianne Miedema", "position": "FW", "sentiment_lift": 9.1, "engagement_mult": 4.1, "merch_index": 95, "marketing_value": 94},
+        {"name": "Beth Mead",        "position": "FW", "sentiment_lift": 8.4, "engagement_mult": 3.2, "merch_index": 91, "marketing_value": 88},
+        {"name": "Kim Little",       "position": "MF", "sentiment_lift": 6.2, "engagement_mult": 2.4, "merch_index": 72, "marketing_value": 70},
+        {"name": "Lotte Wubben-Moy", "position": "DF", "sentiment_lift": 5.8, "engagement_mult": 2.1, "merch_index": 68, "marketing_value": 65},
+        {"name": "Manuela Zinsberger","position":"GK", "sentiment_lift": 4.3, "engagement_mult": 1.8, "merch_index": 55, "marketing_value": 52},
+    ],
+    "Chelsea W": [
+        {"name": "Sam Kerr",         "position": "FW", "sentiment_lift": 9.6, "engagement_mult": 4.8, "merch_index": 97, "marketing_value": 96},
+        {"name": "Erin Cuthbert",    "position": "MF", "sentiment_lift": 7.2, "engagement_mult": 2.9, "merch_index": 78, "marketing_value": 75},
+        {"name": "Millie Bright",    "position": "DF", "sentiment_lift": 6.8, "engagement_mult": 2.6, "merch_index": 74, "marketing_value": 72},
+        {"name": "Niamh Charles",    "position": "DF", "sentiment_lift": 5.3, "engagement_mult": 2.2, "merch_index": 63, "marketing_value": 60},
+        {"name": "Ann-Katrin Berger","position": "GK", "sentiment_lift": 4.1, "engagement_mult": 1.7, "merch_index": 52, "marketing_value": 50},
+    ],
+    "Man City W": [
+        {"name": "Chloe Kelly",      "position": "FW", "sentiment_lift": 8.9, "engagement_mult": 3.9, "merch_index": 88, "marketing_value": 86},
+        {"name": "Lauren Hemp",      "position": "FW", "sentiment_lift": 8.2, "engagement_mult": 3.5, "merch_index": 85, "marketing_value": 82},
+        {"name": "Mary Fowler",      "position": "MF", "sentiment_lift": 7.5, "engagement_mult": 3.0, "merch_index": 80, "marketing_value": 77},
+        {"name": "Alex Greenwood",   "position": "DF", "sentiment_lift": 6.4, "engagement_mult": 2.5, "merch_index": 70, "marketing_value": 68},
+        {"name": "Khiara Keating",   "position": "GK", "sentiment_lift": 5.1, "engagement_mult": 2.0, "merch_index": 58, "marketing_value": 55},
+    ],
+    "Aston Villa W": [
+        {"name": "Rachel Daly",          "position": "FW", "sentiment_lift": 8.0, "engagement_mult": 3.3, "merch_index": 83, "marketing_value": 80},
+        {"name": "Daphne van Domselaar", "position": "GK", "sentiment_lift": 7.1, "engagement_mult": 2.8, "merch_index": 76, "marketing_value": 74},
+        {"name": "Abbi Grant",           "position": "FW", "sentiment_lift": 6.8, "engagement_mult": 2.7, "merch_index": 73, "marketing_value": 70},
+        {"name": "Kirsty Hanson",        "position": "MF", "sentiment_lift": 6.0, "engagement_mult": 2.3, "merch_index": 65, "marketing_value": 62},
+        {"name": "Anita Asante",         "position": "DF", "sentiment_lift": 5.5, "engagement_mult": 2.0, "merch_index": 60, "marketing_value": 58},
+    ],
+    "Brighton W": [
+        {"name": "Elisabeth Terland",  "position": "FW", "sentiment_lift": 7.8, "engagement_mult": 3.2, "merch_index": 81, "marketing_value": 78},
+        {"name": "Vicky Losada",       "position": "MF", "sentiment_lift": 7.0, "engagement_mult": 2.8, "merch_index": 74, "marketing_value": 71},
+        {"name": "Inessa Kaagman",     "position": "MF", "sentiment_lift": 6.3, "engagement_mult": 2.4, "merch_index": 67, "marketing_value": 64},
+        {"name": "Maria Thorisdottir", "position": "DF", "sentiment_lift": 5.2, "engagement_mult": 2.0, "merch_index": 58, "marketing_value": 56},
+        {"name": "Sophie Baggaley",    "position": "GK", "sentiment_lift": 4.5, "engagement_mult": 1.9, "merch_index": 53, "marketing_value": 50},
+    ],
+    "WSL Overall": [],
+}
+
 def _cache_path(key):
     h = hashlib.md5(key.encode()).hexdigest()
     return CACHE_DIR / f"{h}.json"
@@ -314,6 +354,119 @@ def get_fan_cohorts(club_name):
             "action": "Welcome series + buddy ticket offer",
         },
     ]
+
+
+# ── Feature 1: Attendance Prediction Engine ───────────────────────────────────
+def get_attendance_predictions(club_name):
+    """Predict stadium fill rate per fixture. Simulated model."""
+    fixtures = FIXTURES.get(club_name, [])
+    rng = random.Random(hash(club_name + "attpred2025") % 99999)
+    sent = _simulated_sentiment(club_name)
+    form = WSL_CLUBS.get(club_name, {}).get("form", [])
+    avg_hist = WSL_CLUBS.get(club_name, {}).get("avg_attendance_pct", 70)
+    losses = form.count("L")
+
+    predictions = []
+    for f in fixtures:
+        sent_adj   = (sent["score"] - 60) * 0.15
+        derby_bonus = 10 if f["is_rival"] else 0
+        form_penalty = losses * 3.5
+        days_adj   = max(0, (20 - f["days_away"]) / 20) * 4
+        predicted  = avg_hist + sent_adj + derby_bonus - form_penalty + days_adj + rng.uniform(-2, 2)
+        predicted  = max(15, min(100, predicted))
+        conf       = rng.uniform(4, 8)
+        predictions.append({
+            **f,
+            "predicted_pct": round(predicted, 1),
+            "confidence_low": round(max(10, predicted - conf), 1),
+            "confidence_high": round(min(100, predicted + conf), 1),
+            "at_risk": predicted < 70,
+            "drivers": {
+                "historical": avg_hist,
+                "sentiment_adj": round(sent_adj, 1),
+                "derby_bonus": derby_bonus,
+                "form_penalty": round(-form_penalty, 1),
+            },
+        })
+    return predictions
+
+
+# ── Feature 2: Fan Churn Risk Score ───────────────────────────────────────────
+def get_churn_risk_scores(club_name):
+    """Per-cohort churn probability with retention action. Simulated model."""
+    rng = random.Random(hash(club_name + "churn2025") % 99999)
+    sent = _simulated_sentiment(club_name)
+    form = WSL_CLUBS.get(club_name, {}).get("form", [])
+    losses = form.count("L")
+
+    COHORT_PROFILES = [
+        {"name": "18–24 Casual",   "base_churn": 38, "sent_sens": 0.40, "form_sens": 8,
+         "retention": "TikTok-first content series + £5 first-ticket discount code"},
+        {"name": "25–34 Regular",  "base_churn": 22, "sent_sens": 0.25, "form_sens": 5,
+         "retention": "Early-bird season ticket offer + priority seat selection window"},
+        {"name": "35–49 Loyalist", "base_churn": 11, "sent_sens": 0.15, "form_sens": 3,
+         "retention": "Auto-renewal prompt + complimentary hospitality upgrade voucher"},
+        {"name": "50+ Veteran",    "base_churn":  8, "sent_sens": 0.10, "form_sens": 2,
+         "retention": "Legacy membership recognition + personalised captain's letter"},
+        {"name": "Lapsed Buyers",  "base_churn": 72, "sent_sens": 0.60, "form_sens": 12,
+         "retention": "Win-back email series: 30% off + personalised 'what you missed' reel"},
+        {"name": "First-Timers",   "base_churn": 45, "sent_sens": 0.50, "form_sens": 9,
+         "retention": "Guided matchday experience + buddy ticket for next home game"},
+    ]
+
+    result = []
+    for c in COHORT_PROFILES:
+        sent_delta = max(0, (65 - sent["score"])) * c["sent_sens"]
+        form_delta = losses * c["form_sens"]
+        churn = c["base_churn"] + sent_delta + form_delta + rng.uniform(-2, 2)
+        churn = round(max(3, min(95, churn)), 1)
+        result.append({
+            "name": c["name"],
+            "churn_pct": churn,
+            "retention_action": c["retention"],
+            "risk_level": "HIGH" if churn >= 55 else "MED" if churn >= 28 else "LOW",
+        })
+    return result
+
+
+# ── Feature 3: Player Sentiment Influence ─────────────────────────────────────
+def get_player_sentiment_influence(club_name):
+    """5 key players per club ranked by marketing/sentiment value. Simulated data."""
+    if club_name == "WSL Overall":
+        players = []
+        for club in [c for c in PLAYER_DATA if c != "WSL Overall" and PLAYER_DATA[c]]:
+            top = max(PLAYER_DATA[club], key=lambda p: p["marketing_value"])
+            players.append({**top, "club": club})
+        return sorted(players, key=lambda p: p["marketing_value"], reverse=True)
+    players = PLAYER_DATA.get(club_name, [])
+    return sorted([{**p, "club": club_name} for p in players], key=lambda p: p["marketing_value"], reverse=True)
+
+
+# ── Feature 4: Sponsor Exposure Score ─────────────────────────────────────────
+def get_sponsor_exposure_scores(club_name):
+    """Per-fixture sponsor visibility value index (0–100). Simulated model."""
+    fixtures = FIXTURES.get(club_name, [])
+    rng = random.Random(hash(club_name + "sponsor2025") % 99999)
+    sent = _simulated_sentiment(club_name)
+    content = get_content_engagement(club_name)
+    league_avg = 57
+
+    scores = []
+    for f in fixtures:
+        content_score  = min(100, content["engagement_rate"] * 8 + rng.uniform(10, 30))
+        sentiment_score = sent["score"]
+        derby_mult     = 1.45 if f["is_rival"] else 1.0
+        broadcast      = rng.uniform(65, 92) if f["is_rival"] else rng.uniform(28, 65)
+        raw = (content_score * 0.30 + sentiment_score * 0.25 + broadcast * 0.28 + f["att_pct"] * 0.17)
+        idx = round(min(100, max(10, raw * derby_mult)), 1)
+        scores.append({
+            **f,
+            "sponsor_index": idx,
+            "vs_benchmark": round(idx - league_avg, 1),
+            "broadcast_reach": round(broadcast, 1),
+            "is_premium": idx >= 75,
+        })
+    return {"fixtures": scores, "league_avg": league_avg}
 
 def get_claude_recommendation(club_name, signal_title, signal_desc):
     if not ANTHROPIC_API_KEY:
@@ -531,6 +684,10 @@ def get_full_club_data(club_name):
     signals    = generate_signals(club_name, sentiment, risk_data, content["total_views"], league)
     cohorts    = get_fan_cohorts(club_name)
     risk_alerts = sum(1 for s in signals if s["priority"] == "HIGH")
+    attendance_predictions = get_attendance_predictions(club_name)
+    churn_risks    = get_churn_risk_scores(club_name)
+    player_influence = get_player_sentiment_influence(club_name)
+    sponsor_exposure = get_sponsor_exposure_scores(club_name)
     return {
         "club": club_name,
         "sentiment": sentiment,
@@ -552,7 +709,11 @@ def get_full_club_data(club_name):
         "data_sources": {
             "sentiment": sentiment.get("source","simulated"),
             "content": content.get("source","simulated"),
-        }
+        },
+        "attendance_predictions": attendance_predictions,
+        "churn_risks": churn_risks,
+        "player_influence": player_influence,
+        "sponsor_exposure": sponsor_exposure,
     }
 
 def _get_wsl_overall_data():
@@ -610,6 +771,10 @@ def _get_wsl_overall_data():
     cohorts = get_fan_cohorts("WSL Overall")
     risk_alerts = sum(1 for s in signals if s["priority"] == "HIGH")
 
+    attendance_predictions = get_attendance_predictions("WSL Overall")
+    churn_risks    = get_churn_risk_scores("WSL Overall")
+    player_influence = get_player_sentiment_influence("WSL Overall")
+    sponsor_exposure = get_sponsor_exposure_scores("WSL Overall")
     return {
         "club": "WSL Overall",
         "sentiment": sentiment,
@@ -629,4 +794,8 @@ def _get_wsl_overall_data():
             "overall_risk": risk_data["overall_risk"],
         },
         "data_sources": {"sentiment":"simulated","content":"simulated"},
+        "attendance_predictions": attendance_predictions,
+        "churn_risks": churn_risks,
+        "player_influence": player_influence,
+        "sponsor_exposure": sponsor_exposure,
     }

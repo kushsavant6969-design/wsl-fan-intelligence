@@ -102,7 +102,7 @@ st.markdown("""
     <span style="font-size:10px;color:#374151;letter-spacing:.03em">
         <span style="color:#22c55e;font-size:9px">⬤</span> Live data: YouTube &nbsp;·&nbsp;
         <span style="color:#f59e0b;font-size:9px">◯</span> Simulated: Sentiment, Ticketing, Social &nbsp;·&nbsp;
-        Built as a proof of concept for Two Circles
+        Built as a proof of concept
     </span>
 </div>""", unsafe_allow_html=True)
 
@@ -115,7 +115,7 @@ with c1:
         <span style="font-family:'Syne',sans-serif;font-size:28px;font-weight:400;color:#4b5563"> / WSL Edition</span>
     </div>
     <div style="font-size:11px;color:#6b7280;letter-spacing:.04em">
-        Women's Super League · 2024–25 · Fan Intelligence & Risk Engine · Prototype for Two Circles
+        Women's Super League · 2024–25 · Fan Intelligence & Risk Engine
     </div>
     <div style="font-size:11px;color:#4a7a35;font-style:italic;margin-top:5px;letter-spacing:.02em">
         Turning fan behaviour into commercial decisions — in real time
@@ -184,32 +184,33 @@ fi_components = [
     ("Content eng.", f"{round(min(100, content['engagement_rate']*8))}", "15%"),
     ("Cohort health",f"{round(_cohort_avg)}", "10%"),
 ]
-comp_html = "".join(f"""
-<div style="text-align:center;padding:0 12px;border-right:1px solid #1f2937">
-    <div style="font-size:9px;color:#4b5563;margin-bottom:2px">{lbl}</div>
-    <div style="font-size:12px;font-weight:600;color:#6b7280">{val}</div>
-    <div style="font-size:9px;color:#374151">w:{w}</div>
-</div>""" for lbl, val, w in fi_components)
-
-st.markdown(f"""
-<div style="background:{fi_bg};border:1px solid {fi_color}40;border-radius:12px;padding:18px 24px;margin-bottom:18px;
-            display:flex;align-items:center;gap:24px">
-    <div style="flex-shrink:0;text-align:center;min-width:100px">
-        <div style="font-size:9px;color:{fi_color};letter-spacing:.1em;margin-bottom:4px;text-transform:uppercase">FanIntel Score</div>
-        <div style="font-family:'Syne',sans-serif;font-size:56px;font-weight:800;color:{fi_color};line-height:1">{fanIntel_score}</div>
-        <div style="font-size:10px;color:#4b5563;margin-top:2px">out of 100</div>
-    </div>
-    <div style="flex:1">
-        <div style="font-size:12px;color:{fi_color};font-weight:500;margin-bottom:6px">{fi_label}</div>
-        <div style="background:#0a0c10;border-radius:5px;height:6px;overflow:hidden;margin-bottom:12px">
-            <div style="width:{fanIntel_score}%;height:100%;background:{fi_color};border-radius:5px;transition:.3s"></div>
-        </div>
-        <div style="font-size:9px;color:#4b5563;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Overall Fan & Commercial Health · Composite of all signals</div>
-        <div style="display:flex;flex-wrap:wrap">
-            {comp_html}
-        </div>
-    </div>
-</div>""", unsafe_allow_html=True)
+fi_border = fi_color + "40"
+comp_html = "".join(
+    '<div style="text-align:center;padding:0 12px;border-right:1px solid #1f2937">'
+    + f'<div style="font-size:9px;color:#4b5563;margin-bottom:2px">{lbl}</div>'
+    + f'<div style="font-size:12px;font-weight:600;color:#6b7280">{val}</div>'
+    + f'<div style="font-size:9px;color:#374151">w:{w}</div>'
+    + '</div>'
+    for lbl, val, w in fi_components
+)
+fi_html = (
+    f'<div style="background:{fi_bg};border:1px solid {fi_border};border-radius:12px;padding:18px 24px;margin-bottom:18px;display:flex;align-items:center;gap:24px">'
+    + f'<div style="flex-shrink:0;text-align:center;min-width:100px">'
+    + f'<div style="font-size:9px;color:{fi_color};letter-spacing:.1em;margin-bottom:4px;text-transform:uppercase">FanIntel Score</div>'
+    + f'<div style="font-family:Syne,sans-serif;font-size:56px;font-weight:800;color:{fi_color};line-height:1">{fanIntel_score}</div>'
+    + '<div style="font-size:10px;color:#4b5563;margin-top:2px">out of 100</div>'
+    + '</div>'
+    + '<div style="flex:1">'
+    + f'<div style="font-size:12px;color:{fi_color};font-weight:500;margin-bottom:6px">{fi_label}</div>'
+    + f'<div style="background:#0a0c10;border-radius:5px;height:6px;overflow:hidden;margin-bottom:12px">'
+    + f'<div style="width:{fanIntel_score}%;height:100%;background:{fi_color};border-radius:5px"></div>'
+    + '</div>'
+    + '<div style="font-size:9px;color:#4b5563;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Overall Fan &amp; Commercial Health · Composite of all signals</div>'
+    + f'<div style="display:flex;flex-wrap:wrap">{comp_html}</div>'
+    + '</div>'
+    + '</div>'
+)
+st.markdown(fi_html, unsafe_allow_html=True)
 
 # ── KPI row ───────────────────────────────────────────────────────────────────
 k1,k2,k3,k4,k5 = st.columns(5)
@@ -443,41 +444,42 @@ _narrative = (
     f"Action: {_action_title}"
 )
 
-st.markdown(f"""
-<div style="background:#13161d;border:1px solid #1f2937;border-radius:10px;padding:16px 20px">
-    <div style="display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin-bottom:14px">
-        <!-- Node 1: Sentiment -->
-        <div style="background:{_sent_node_bg};border:1px solid {_sent_node_c}40;border-radius:8px 0 0 8px;padding:12px 16px;flex:1;min-width:120px">
-            <div style="font-size:8px;color:{_sent_node_c};letter-spacing:.08em;margin-bottom:5px;text-transform:uppercase">Sentiment Score</div>
-            <div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:{_sent_node_c}">{_sent_txt.split(" at ")[0]}</div>
-            <div style="font-size:10px;color:#4b5563;margin-top:2px">{_sent_sub}</div>
-        </div>
-        <div style="display:flex;align-items:center;padding:0 6px;color:#374151;font-size:20px;flex-shrink:0">›</div>
-        <!-- Node 2: Ticket Demand -->
-        <div style="background:{_dem_bg};border:1px solid {_dem_c}40;border-radius:0;padding:12px 16px;flex:1;min-width:120px">
-            <div style="font-size:8px;color:{_dem_c};letter-spacing:.08em;margin-bottom:5px;text-transform:uppercase">Ticket Demand</div>
-            <div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:{_dem_c}">{_dem_label}</div>
-            <div style="font-size:10px;color:#4b5563;margin-top:2px">{_dem_sub}</div>
-        </div>
-        <div style="display:flex;align-items:center;padding:0 6px;color:#374151;font-size:20px;flex-shrink:0">›</div>
-        <!-- Node 3: Sponsor Exposure -->
-        <div style="background:{_sp_bg};border:1px solid {_sp_c}40;border-radius:0;padding:12px 16px;flex:1;min-width:120px">
-            <div style="font-size:8px;color:{_sp_c};letter-spacing:.08em;margin-bottom:5px;text-transform:uppercase">Sponsor Exposure</div>
-            <div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:{_sp_c}">{_sp_label}</div>
-            <div style="font-size:10px;color:#4b5563;margin-top:2px">{_sp_sub}</div>
-        </div>
-        <div style="display:flex;align-items:center;padding:0 6px;color:#374151;font-size:20px;flex-shrink:0">›</div>
-        <!-- Node 4: Recommended Action -->
-        <div style="background:{_action_bg};border:1px solid {_action_c};border-radius:0 8px 8px 0;padding:12px 16px;flex:1.4;min-width:160px">
-            <div style="font-size:8px;color:{_action_c};letter-spacing:.08em;margin-bottom:5px;text-transform:uppercase">Recommended Action</div>
-            <div style="font-size:12px;font-weight:500;color:#e8eaf0;line-height:1.4">{_action_title}</div>
-            <div style="font-size:10px;color:#4b5563;margin-top:3px;line-height:1.4">{_action_why[:60]}{'...' if len(_action_why)>60 else ''}</div>
-        </div>
-    </div>
-    <div style="font-size:10px;color:#374151;font-style:italic;border-top:1px solid #1a1e27;padding-top:10px">
-        ↳ {_narrative}
-    </div>
-</div>""", unsafe_allow_html=True)
+_sent_border  = _sent_node_c + "40"
+_dem_border   = _dem_c + "40"
+_sp_border    = _sp_c + "40"
+_action_why_s = _action_why[:60] + ("..." if len(_action_why) > 60 else "")
+_arrow = '<div style="display:flex;align-items:center;padding:0 6px;color:#374151;font-size:20px;flex-shrink:0">&#8250;</div>'
+cascade_html = (
+    '<div style="background:#13161d;border:1px solid #1f2937;border-radius:10px;padding:16px 20px">'
+    + '<div style="display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin-bottom:14px">'
+    + f'<div style="background:{_sent_node_bg};border:1px solid {_sent_border};border-radius:8px 0 0 8px;padding:12px 16px;flex:1;min-width:120px">'
+    + f'<div style="font-size:8px;color:{_sent_node_c};letter-spacing:.08em;margin-bottom:5px;text-transform:uppercase">Sentiment Score</div>'
+    + f'<div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:{_sent_node_c}">{_sent_txt}</div>'
+    + f'<div style="font-size:10px;color:#4b5563;margin-top:2px">{_sent_sub}</div>'
+    + '</div>'
+    + _arrow
+    + f'<div style="background:{_dem_bg};border:1px solid {_dem_border};padding:12px 16px;flex:1;min-width:120px">'
+    + f'<div style="font-size:8px;color:{_dem_c};letter-spacing:.08em;margin-bottom:5px;text-transform:uppercase">Ticket Demand</div>'
+    + f'<div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:{_dem_c}">{_dem_label}</div>'
+    + f'<div style="font-size:10px;color:#4b5563;margin-top:2px">{_dem_sub}</div>'
+    + '</div>'
+    + _arrow
+    + f'<div style="background:{_sp_bg};border:1px solid {_sp_border};padding:12px 16px;flex:1;min-width:120px">'
+    + f'<div style="font-size:8px;color:{_sp_c};letter-spacing:.08em;margin-bottom:5px;text-transform:uppercase">Sponsor Exposure</div>'
+    + f'<div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:{_sp_c}">{_sp_label}</div>'
+    + f'<div style="font-size:10px;color:#4b5563;margin-top:2px">{_sp_sub}</div>'
+    + '</div>'
+    + _arrow
+    + f'<div style="background:{_action_bg};border:1px solid {_action_c};border-radius:0 8px 8px 0;padding:12px 16px;flex:1.4;min-width:160px">'
+    + f'<div style="font-size:8px;color:{_action_c};letter-spacing:.08em;margin-bottom:5px;text-transform:uppercase">Recommended Action</div>'
+    + f'<div style="font-size:12px;font-weight:500;color:#e8eaf0;line-height:1.4">{_action_title}</div>'
+    + f'<div style="font-size:10px;color:#4b5563;margin-top:3px;line-height:1.4">{_action_why_s}</div>'
+    + '</div>'
+    + '</div>'
+    + f'<div style="font-size:10px;color:#374151;font-style:italic;border-top:1px solid #1a1e27;padding-top:10px">&#8618; {_narrative}</div>'
+    + '</div>'
+)
+st.markdown(cascade_html, unsafe_allow_html=True)
 
 st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
@@ -537,36 +539,34 @@ st.markdown("""
 if att_preds:
     att_cols = st.columns(len(att_preds))
     for i, ap in enumerate(att_preds):
-        pred = ap["predicted_pct"]
-        low  = ap["confidence_low"]
-        high = ap["confidence_high"]
+        pred    = ap["predicted_pct"]
+        low     = ap["confidence_low"]
+        high    = ap["confidence_high"]
         at_risk = ap["at_risk"]
-        bar_c = "#ef4444" if at_risk else "#c8f135" if pred >= 85 else "#3d9cf0"
-        bar_bg = "#1f0a0a" if at_risk else "#0a1f0a" if pred >= 85 else "#0a1020"
-        rival_tag = ' <span style="font-size:9px;color:#3d9cf0;border:1px solid #3d9cf0;padding:1px 5px;border-radius:4px">DERBY</span>' if ap["is_rival"] else ""
-        risk_tag = '<div style="background:#1f0a0a;border:1px solid #ef4444;color:#ef4444;font-size:9px;padding:3px 8px;border-radius:6px;text-align:center;margin-bottom:8px;letter-spacing:.05em">⚠ AT RISK — BELOW 70%</div>' if at_risk else ""
-        home_icon = "🏠" if ap["home"] else "✈"
-        d = ap["drivers"]
+        drv     = ap["drivers"]
+        bar_c      = "#ef4444" if at_risk else "#c8f135" if pred >= 85 else "#3d9cf0"
+        border_c   = "#ef4444" if at_risk else "#1f2937"
+        home_icon  = "🏠" if ap["home"] else "✈"
+        rival_html = '<span style="font-size:9px;color:#3d9cf0;border:1px solid #3d9cf0;padding:1px 5px;border-radius:4px;margin-left:4px">DERBY</span>' if ap["is_rival"] else ""
+        risk_html  = '<div style="background:#1f0a0a;border:1px solid #ef4444;color:#ef4444;font-size:9px;padding:3px 8px;border-radius:6px;text-align:center;margin-bottom:8px">AT RISK — BELOW 70%</div>' if at_risk else ""
+        sent_sign  = "+" if drv["sentiment_adj"] >= 0 else ""
+        card_html = (
+            f'<div style="background:#13161d;border:1px solid {border_c};border-top:3px solid {bar_c};border-radius:8px;padding:14px">'
+            + risk_html
+            + f'<div style="font-size:11px;color:#e8eaf0;margin-bottom:4px">{home_icon} vs {ap["opponent"]}{rival_html}</div>'
+            + f'<div style="font-size:10px;color:#4b5563;margin-bottom:10px">{ap["date"]} · {ap["days_away"]}d away</div>'
+            + f'<div style="font-family:Syne,sans-serif;font-size:32px;font-weight:800;color:{bar_c};line-height:1">{pred}%</div>'
+            + '<div style="font-size:10px;color:#6b7280;margin-bottom:8px">predicted capacity fill</div>'
+            + f'<div style="font-size:10px;color:#4b5563;margin-bottom:4px">Confidence range: {low}% &ndash; {high}%</div>'
+            + f'<div style="background:#0a0c10;border-radius:4px;height:5px;overflow:hidden;margin-bottom:10px">'
+            + f'<div style="width:{pred}%;height:100%;background:{bar_c};border-radius:4px"></div>'
+            + '</div>'
+            + f'<div style="font-size:9px;color:#4b5563;margin-bottom:2px">Hist avg: {drv["historical"]}% | Sentiment: {sent_sign}{drv["sentiment_adj"]}%</div>'
+            + f'<div style="font-size:9px;color:#374151">Derby bonus: +{drv["derby_bonus"]}% | Form adj: {drv["form_penalty"]}%</div>'
+            + '</div>'
+        )
         with att_cols[i]:
-            st.markdown(f"""
-            <div style="background:#13161d;border:1px solid {'#ef4444' if at_risk else '#1f2937'};border-top:3px solid {bar_c};border-radius:8px;padding:14px 14px">
-                {risk_tag}
-                <div style="font-size:11px;color:#e8eaf0;margin-bottom:4px">{home_icon} vs {ap['opponent']}{rival_tag}</div>
-                <div style="font-size:10px;color:#4b5563;margin-bottom:10px">{ap['date']} · {ap['days_away']}d away</div>
-                <div style="font-family:Syne,sans-serif;font-size:32px;font-weight:800;color:{bar_c};line-height:1">{pred}%</div>
-                <div style="font-size:10px;color:#6b7280;margin-bottom:8px">predicted capacity fill</div>
-                <div style="font-size:10px;color:#4b5563;margin-bottom:6px">Confidence: {low}% – {high}%</div>
-                <div style="background:#0a0c10;border-radius:4px;height:5px;overflow:hidden;margin-bottom:10px;position:relative">
-                    <div style="position:absolute;left:{low}%;width:{high-low}%;height:100%;background:#374151;border-radius:4px"></div>
-                    <div style="position:absolute;left:0;width:{pred}%;height:100%;background:{bar_c};border-radius:4px"></div>
-                </div>
-                <div style="font-size:9px;color:#374151;line-height:1.7">
-                    Hist avg: {d['historical']}% &nbsp;|&nbsp;
-                    Sentiment: {'+' if d['sentiment_adj']>=0 else ''}{d['sentiment_adj']}%<br>
-                    Derby bonus: +{d['derby_bonus']}% &nbsp;|&nbsp;
-                    Form: {d['form_penalty']}%
-                </div>
-            </div>""", unsafe_allow_html=True)
+            st.markdown(card_html, unsafe_allow_html=True)
 else:
     st.markdown('<div style="color:#4b5563;font-size:11px">No fixture data available.</div>', unsafe_allow_html=True)
 
@@ -692,34 +692,37 @@ if sp_fixtures:
         idx  = sf["sponsor_index"]
         vs_b = sf["vs_benchmark"]
         is_p = sf["is_premium"]
-        idx_c = "#c8f135" if is_p else "#3d9cf0" if idx >= 55 else "#6b7280"
-        vs_c  = "#22c55e" if vs_b >= 0 else "#ef4444"
+        idx_c     = "#c8f135" if is_p else "#3d9cf0" if idx >= 55 else "#6b7280"
+        vs_c      = "#22c55e" if vs_b >= 0 else "#ef4444"
+        border_c  = "#c8f135" if is_p else "#1f2937"
         home_icon = "🏠" if sf["home"] else "✈"
-        rival_tag = ' <span style="font-size:9px;color:#f59e0b">DERBY</span>' if sf["is_rival"] else ""
-        premium_tag = '<div style="background:#0f1a08;border:1px solid #c8f135;color:#c8f135;font-size:9px;padding:3px 8px;border-radius:6px;text-align:center;margin-bottom:10px;letter-spacing:.05em">★ PREMIUM SLOT</div>' if is_p else ""
-        gauge_pct = idx  # 0–100
+        rival_html   = '<span style="font-size:9px;color:#f59e0b;margin-left:4px">DERBY</span>' if sf["is_rival"] else ""
+        premium_html = '<div style="background:#0f1a08;border:1px solid #c8f135;color:#c8f135;font-size:9px;padding:3px 8px;border-radius:6px;text-align:center;margin-bottom:10px">PREMIUM SLOT</div>' if is_p else ""
+        vs_sign = "+" if vs_b >= 0 else ""
+        sp_card = (
+            f'<div style="background:#13161d;border:1px solid {border_c};border-radius:8px;padding:14px">'
+            + premium_html
+            + f'<div style="font-size:11px;color:#e8eaf0;margin-bottom:4px">{home_icon} vs {sf["opponent"]}{rival_html}</div>'
+            + f'<div style="font-size:10px;color:#4b5563;margin-bottom:10px">{sf["date"]}</div>'
+            + f'<div style="font-family:Syne,sans-serif;font-size:32px;font-weight:800;color:{idx_c};line-height:1">{idx}</div>'
+            + '<div style="font-size:10px;color:#6b7280;margin-bottom:8px">sponsor value index / 100</div>'
+            + f'<div style="background:#0a0c10;border-radius:4px;height:6px;overflow:hidden;margin-bottom:10px">'
+            + f'<div style="width:{idx}%;height:100%;background:{idx_c};border-radius:4px"></div>'
+            + '</div>'
+            + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'
+            + f'<div style="background:#0a0c10;border-radius:5px;padding:7px;text-align:center">'
+            + f'<div style="font-size:9px;color:#4b5563;margin-bottom:2px">vs WSL avg ({league_avg})</div>'
+            + f'<div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:{vs_c}">{vs_sign}{vs_b}</div>'
+            + '</div>'
+            + '<div style="background:#0a0c10;border-radius:5px;padding:7px;text-align:center">'
+            + '<div style="font-size:9px;color:#4b5563;margin-bottom:2px">Broadcast reach</div>'
+            + f'<div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:#a78bfa">{sf["broadcast_reach"]}</div>'
+            + '</div>'
+            + '</div>'
+            + '</div>'
+        )
         with sp_cols[i]:
-            st.markdown(f"""
-            <div style="background:#13161d;border:1px solid {'#c8f135' if is_p else '#1f2937'};border-radius:8px;padding:14px 14px">
-                {premium_tag}
-                <div style="font-size:11px;color:#e8eaf0;margin-bottom:4px">{home_icon} vs {sf['opponent']}{rival_tag}</div>
-                <div style="font-size:10px;color:#4b5563;margin-bottom:10px">{sf['date']}</div>
-                <div style="font-family:Syne,sans-serif;font-size:32px;font-weight:800;color:{idx_c};line-height:1">{idx}</div>
-                <div style="font-size:10px;color:#6b7280;margin-bottom:8px">sponsor value index / 100</div>
-                <div style="background:#0a0c10;border-radius:4px;height:6px;overflow:hidden;margin-bottom:10px">
-                    <div style="width:{gauge_pct}%;height:100%;background:{idx_c};border-radius:4px"></div>
-                </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-                    <div style="background:#0a0c10;border-radius:5px;padding:7px;text-align:center">
-                        <div style="font-size:9px;color:#4b5563;margin-bottom:2px">vs WSL avg ({league_avg})</div>
-                        <div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:{vs_c}">{'+' if vs_b>=0 else ''}{vs_b}</div>
-                    </div>
-                    <div style="background:#0a0c10;border-radius:5px;padding:7px;text-align:center">
-                        <div style="font-size:9px;color:#4b5563;margin-bottom:2px">Broadcast reach</div>
-                        <div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:#a78bfa">{sf['broadcast_reach']}</div>
-                    </div>
-                </div>
-            </div>""", unsafe_allow_html=True)
+            st.markdown(sp_card, unsafe_allow_html=True)
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("""

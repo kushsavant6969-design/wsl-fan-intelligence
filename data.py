@@ -16,7 +16,8 @@ WSL_CLUBS = {
         "reddit_terms": ["Arsenal Women", "Arsenal W", "Vivianne Miedema", "Beth Mead"],
         "color": "#EF0107", "stadium": "Meadow Park", "capacity": 5000,
         "rivals": ["Chelsea W", "Man City W"],
-        "form": ["W","W","L","W","D"],
+        "form":      ["W",  "W",  "L",  "W",  "D"  ],
+        "form_comp": ["UCL","WSL","WSL","FAC","WSL"],
         "avg_attendance_pct": 87,
     },
     "Chelsea W": {
@@ -24,7 +25,8 @@ WSL_CLUBS = {
         "reddit_terms": ["Chelsea Women", "Chelsea W", "Sam Kerr", "Harder"],
         "color": "#034694", "stadium": "Kingsmeadow", "capacity": 4850,
         "rivals": ["Arsenal W", "Man City W"],
-        "form": ["W","W","W","L","W"],
+        "form":      ["W",  "W",  "W",  "L",  "W"  ],
+        "form_comp": ["WSL","UCL","WSL","UCL","WSL"],
         "avg_attendance_pct": 91,
     },
     "Man City W": {
@@ -32,7 +34,8 @@ WSL_CLUBS = {
         "reddit_terms": ["Man City Women", "Manchester City W", "MCWFC"],
         "color": "#6CABDD", "stadium": "Joie Stadium", "capacity": 7000,
         "rivals": ["Arsenal W", "Chelsea W"],
-        "form": ["L","D","L","W","L"],
+        "form":      ["L",  "D",  "L",  "W",  "L"  ],
+        "form_comp": ["WSL","WSL","FAC","WSL","WSL"],
         "avg_attendance_pct": 54,
     },
     "Aston Villa W": {
@@ -40,7 +43,8 @@ WSL_CLUBS = {
         "reddit_terms": ["Aston Villa Women", "Villa W", "Lehmann"],
         "color": "#95BFE5", "stadium": "Villa Park", "capacity": 42682,
         "rivals": ["Birmingham W"],
-        "form": ["W","L","W","W","D"],
+        "form":      ["W",  "L",  "W",  "W",  "D"  ],
+        "form_comp": ["WSL","FAC","WSL","WSL","WSL"],
         "avg_attendance_pct": 74,
     },
     "Brighton W": {
@@ -48,7 +52,8 @@ WSL_CLUBS = {
         "reddit_terms": ["Brighton Women", "Brighton W", "Seagulls Women"],
         "color": "#0057B8", "stadium": "Broadfield Stadium", "capacity": 5500,
         "rivals": ["Crystal Palace W"],
-        "form": ["D","W","L","W","W"],
+        "form":      ["D",  "W",  "L",  "W",  "W"  ],
+        "form_comp": ["WSL","FAC","WSL","WSL","WSL"],
         "avg_attendance_pct": 71,
     },
     "WSL Overall": {
@@ -56,7 +61,8 @@ WSL_CLUBS = {
         "reddit_terms": ["WSL", "Women's Super League", "FAWSL"],
         "color": "#c8f135", "stadium": "Various", "capacity": 13006,
         "rivals": [],
-        "form": ["W","D","W","L","W"],
+        "form":      ["W",  "D",  "W",  "L",  "W"  ],
+        "form_comp": ["WSL","WSL","UCL","FAC","WSL"],
         "avg_attendance_pct": 75,
     },
 }
@@ -680,6 +686,7 @@ def get_full_club_data(club_name):
     trend      = get_sentiment_trend(club_name)
     league     = WSL_LEAGUE_CONTEXT.get(club_name, {})
     form       = WSL_CLUBS[club_name]["form"]
+    form_comp  = WSL_CLUBS[club_name].get("form_comp", ["WSL"] * len(form))
     risk_data  = compute_fan_risk_score(club_name, sentiment["score"], tickets["fixtures"], form)
     signals    = generate_signals(club_name, sentiment, risk_data, content["total_views"], league)
     cohorts    = get_fan_cohorts(club_name)
@@ -698,6 +705,7 @@ def get_full_club_data(club_name):
         "risk_data": risk_data,
         "league": league,
         "form": form,
+        "form_comp": form_comp,
         "cohorts": cohorts,
         "kpis": {
             "sentiment_score": sentiment["score"],
@@ -765,7 +773,8 @@ def _get_wsl_overall_data():
     for ch in ["twitter","instagram","youtube","reddit"]:
         avg_trend[ch] = [round(np.mean([t[ch][i] for t in trends]), 1) for i in range(n)]
 
-    form = WSL_CLUBS["WSL Overall"]["form"]
+    form      = WSL_CLUBS["WSL Overall"]["form"]
+    form_comp = WSL_CLUBS["WSL Overall"].get("form_comp", ["WSL"] * len(form))
     risk_data = compute_fan_risk_score("WSL Overall", avg_score, tickets["fixtures"], form)
     signals = generate_wsl_overall_signals([(real_clubs[i], sentiments[i]["score"]) for i in range(len(real_clubs))])
     cohorts = get_fan_cohorts("WSL Overall")
@@ -785,6 +794,7 @@ def _get_wsl_overall_data():
         "risk_data": risk_data,
         "league": {"position":"—","pts":"—","gd":"—"},
         "form": form,
+        "form_comp": form_comp,
         "cohorts": cohorts,
         "kpis": {
             "sentiment_score": avg_score,

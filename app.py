@@ -80,6 +80,22 @@ def form_pill(result):
     b = bg.get(result,"#13161d")
     return f'<span style="background:{b};color:{c};border:1px solid {c};font-size:11px;font-weight:600;padding:3px 9px;border-radius:5px;margin-right:4px">{result}</span>'
 
+def form_pill_comp(result, comp):
+    """Result pill with competition label underneath."""
+    colors = {"W":"#22c55e","D":"#f59e0b","L":"#ef4444"}
+    bg     = {"W":"#052e16","D":"#1c1500","L":"#1f0a0a"}
+    comp_c = {"WSL":"#6b7280","FAC":"#f59e0b","UCL":"#3d9cf0"}
+    c = colors.get(result,"#6b7280")
+    b = bg.get(result,"#13161d")
+    cc = comp_c.get(comp,"#6b7280")
+    return (
+        f'<div style="display:inline-block;text-align:center;margin-right:6px;vertical-align:top">'
+        f'<span style="background:{b};color:{c};border:1px solid {c};font-size:11px;font-weight:600;'
+        f'padding:3px 9px;border-radius:5px;display:block">{result}</span>'
+        f'<div style="font-size:8px;color:{cc};margin-top:3px;letter-spacing:.04em">{comp}</div>'
+        f'</div>'
+    )
+
 # ── Data transparency banner ─────────────────────────────────────────────────
 st.markdown("""
 <div style="background:#0d1117;border:1px solid #1a1e27;border-radius:8px;padding:7px 16px;margin-bottom:18px;display:flex;align-items:center;justify-content:center;gap:12px">
@@ -127,6 +143,7 @@ signals          = d["signals"]
 risk             = d["risk_data"]
 league           = d["league"]
 form             = d["form"]
+form_comp        = d["form_comp"]
 sources          = d["data_sources"]
 cohorts          = d["cohorts"]
 att_preds        = d["attendance_predictions"]
@@ -288,7 +305,7 @@ with col2:
     st.markdown(f"""
     <div style="background:#13161d;border:1px solid #1f2937;border-radius:10px;padding:14px 16px;margin-top:4px">
         <div style="font-size:10px;color:#6b7280;margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em">Last 5 matches</div>
-        <div style="margin-bottom:12px">{''.join(form_pill(r) for r in form)}</div>
+        <div style="margin-bottom:12px">{''.join(form_pill_comp(r, c) for r, c in zip(form, form_comp))}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
             <div><div style="font-size:10px;color:#22c55e">POS</div><div style="font-family:Syne,sans-serif;font-size:18px;font-weight:700;color:#22c55e">{sent['positive_pct']}%</div></div>
             <div><div style="font-size:10px;color:#6b7280">NEU</div><div style="font-family:Syne,sans-serif;font-size:18px;font-weight:700;color:#6b7280">{sent['neutral_pct']}%</div></div>

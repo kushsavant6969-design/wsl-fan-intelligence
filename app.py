@@ -99,7 +99,7 @@ with c1:
         <span style="font-family:'Syne',sans-serif;font-size:28px;font-weight:400;color:#4b5563"> / WSL Edition</span>
     </div>
     <div style="font-size:11px;color:#6b7280;letter-spacing:.04em">
-        Women's Super League · 2024–25 · Fan Intelligence & Risk Engine · Prototype for Two Circles
+        Women's Super League · 2024–25 · Fan Intelligence & Risk Engine
     </div>
     <div style="font-size:11px;color:#4a7a35;font-style:italic;margin-top:5px;letter-spacing:.02em">
         Turning fan behaviour into commercial decisions — in real time
@@ -429,28 +429,24 @@ _narrative = (
 st.markdown(f"""
 <div style="background:#13161d;border:1px solid #1f2937;border-radius:10px;padding:16px 20px">
     <div style="display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin-bottom:14px">
-        <!-- Node 1: Sentiment -->
         <div style="background:{_sent_node_bg};border:1px solid {_sent_node_c}40;border-radius:8px 0 0 8px;padding:12px 16px;flex:1;min-width:120px">
             <div style="font-size:8px;color:{_sent_node_c};letter-spacing:.08em;margin-bottom:5px;text-transform:uppercase">Sentiment Score</div>
             <div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:{_sent_node_c}">{_sent_txt.split(" at ")[0]}</div>
             <div style="font-size:10px;color:#4b5563;margin-top:2px">{_sent_sub}</div>
         </div>
         <div style="display:flex;align-items:center;padding:0 6px;color:#374151;font-size:20px;flex-shrink:0">›</div>
-        <!-- Node 2: Ticket Demand -->
         <div style="background:{_dem_bg};border:1px solid {_dem_c}40;border-radius:0;padding:12px 16px;flex:1;min-width:120px">
             <div style="font-size:8px;color:{_dem_c};letter-spacing:.08em;margin-bottom:5px;text-transform:uppercase">Ticket Demand</div>
             <div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:{_dem_c}">{_dem_label}</div>
             <div style="font-size:10px;color:#4b5563;margin-top:2px">{_dem_sub}</div>
         </div>
         <div style="display:flex;align-items:center;padding:0 6px;color:#374151;font-size:20px;flex-shrink:0">›</div>
-        <!-- Node 3: Sponsor Exposure -->
         <div style="background:{_sp_bg};border:1px solid {_sp_c}40;border-radius:0;padding:12px 16px;flex:1;min-width:120px">
             <div style="font-size:8px;color:{_sp_c};letter-spacing:.08em;margin-bottom:5px;text-transform:uppercase">Sponsor Exposure</div>
             <div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:{_sp_c}">{_sp_label}</div>
             <div style="font-size:10px;color:#4b5563;margin-top:2px">{_sp_sub}</div>
         </div>
         <div style="display:flex;align-items:center;padding:0 6px;color:#374151;font-size:20px;flex-shrink:0">›</div>
-        <!-- Node 4: Recommended Action -->
         <div style="background:{_action_bg};border:1px solid {_action_c};border-radius:0 8px 8px 0;padding:12px 16px;flex:1.4;min-width:160px">
             <div style="font-size:8px;color:{_action_c};letter-spacing:.08em;margin-bottom:5px;text-transform:uppercase">Recommended Action</div>
             <div style="font-size:12px;font-weight:500;color:#e8eaf0;line-height:1.4">{_action_title}</div>

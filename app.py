@@ -6,7 +6,7 @@ import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
 from data import get_full_club_data, get_claude_recommendation, WSL_CLUBS, WSL_LEAGUE_CONTEXT, PLAYER_DATA
 
-st.set_page_config(page_title="WSL Fan Intelligence | Two Circles Prototype",
+st.set_page_config(page_title="WSL Fan Intelligence",
     page_icon="⚽", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
@@ -85,8 +85,7 @@ st.markdown("""
 <div style="background:#0d1117;border:1px solid #1a1e27;border-radius:8px;padding:7px 16px;margin-bottom:18px;display:flex;align-items:center;justify-content:center;gap:12px">
     <span style="font-size:10px;color:#374151;letter-spacing:.03em">
         <span style="color:#22c55e;font-size:9px">⬤</span> Live data: YouTube &nbsp;·&nbsp;
-        <span style="color:#f59e0b;font-size:9px">◯</span> Simulated: Sentiment, Ticketing, Social &nbsp;·&nbsp;
-        Built as a proof of concept for Two Circles
+        <span style="color:#f59e0b;font-size:9px">◯</span> Simulated: Sentiment, Ticketing, Social
     </span>
 </div>""", unsafe_allow_html=True)
 
@@ -703,6 +702,6 @@ if sp_fixtures:
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div style="font-size:10px;color:#374151;text-align:center;padding:20px 0 8px;border-top:1px solid #1f2937;margin-top:16px">
-    FanIntel WSL · Built for Two Circles pitch · May 2025 ·
+    FanIntel WSL · May 2025 ·
     Live: YouTube + Reddit · Simulated: X, TikTok, Ticketing · Not production data
 </div>""", unsafe_allow_html=True)

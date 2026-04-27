@@ -6,7 +6,7 @@ import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
 from data import get_full_club_data, get_claude_recommendation, WSL_CLUBS, WSL_LEAGUE_CONTEXT, PLAYER_DATA
 
-st.set_page_config(page_title="WSL Fan Intelligence | Two Circles Prototype",
+st.set_page_config(page_title="WSL Fan Intelligence",
     page_icon="⚽", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
@@ -30,6 +30,12 @@ div[data-testid="stRadio"]>div>label>div>div:has(input[type="radio"]){display:no
 .block-container{padding:2rem 2rem 1rem!important;}
 h1,h2,h3{font-family:'Syne',sans-serif!important;}
 .stSpinner>div{border-top-color:#c8f135!important;}
+div[data-testid="stButton"]>button{
+    background:#13161d!important;border:1px solid #2a2f3d!important;
+    color:#9ca3af!important;font-family:'DM Mono',monospace!important;
+    font-size:10px!important;padding:5px 16px!important;border-radius:6px!important;}
+div[data-testid="stButton"]>button:hover{
+    border-color:#c8f135!important;color:#c8f135!important;}
 
 /* ── Mobile responsive ── */
 @media (max-width: 768px) {
@@ -166,6 +172,51 @@ st.markdown(
     unsafe_allow_html=True)
 st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
 
+# ── How-to Guide (shown on first visit, dismissed via session state) ───────────
+if "guide_dismissed" not in st.session_state:
+    st.session_state["guide_dismissed"] = False
+
+if not st.session_state["guide_dismissed"]:
+    st.markdown("""
+    <div style="background:#0d1117;border:1px solid #c8f13540;border-radius:10px;padding:20px 24px;margin-bottom:4px">
+        <div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:#c8f135;margin-bottom:14px;letter-spacing:-.3px">
+            ✦ How to use FanIntel WSL
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px">
+            <div>
+                <div style="font-size:9px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">What is FanIntel?</div>
+                <div style="font-size:11px;color:#6b7280;line-height:1.7">
+                    A real-time fan intelligence platform for WSL clubs. It aggregates signals
+                    across sentiment, ticketing, content and commercial data to surface actionable
+                    insights for club executives and commercial teams.
+                </div>
+            </div>
+            <div>
+                <div style="font-size:9px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Club selector</div>
+                <div style="font-size:11px;color:#6b7280;line-height:1.7">
+                    Use the tab selector above to switch between WSL clubs — the dashboard refreshes
+                    instantly. The Commercial Impact Summary at the top gives the executive view.
+                    Scroll down for deeper data layers including attendance predictions and churn risk.
+                </div>
+            </div>
+            <div>
+                <div style="font-size:9px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Key metric scales</div>
+                <div style="font-size:11px;color:#6b7280;line-height:1.8">
+                    <span style="color:#9ca3af">FanIntel Score</span> — 0 to 100 &nbsp;·&nbsp; 70+ = healthy<br>
+                    <span style="color:#9ca3af">Sentiment Score</span> — 0 to 100 &nbsp;·&nbsp; &gt;65 = above league avg<br>
+                    <span style="color:#9ca3af">Ticket Demand</span> — 0 to 1 &nbsp;·&nbsp; 1.0 = sold out<br>
+                    <span style="color:#9ca3af">Fan Risk Score</span> — 0 to 100 &nbsp;·&nbsp; lower is better
+                </div>
+            </div>
+        </div>
+    </div>""", unsafe_allow_html=True)
+    _g_spacer, _g_btn = st.columns([10, 1])
+    with _g_btn:
+        if st.button("Dismiss ✕", key="dismiss_guide"):
+            st.session_state["guide_dismissed"] = True
+            st.rerun()
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
 # ── FanIntel Composite Score ───────────────────────────────────────────────────
 _sentiment_c = kpis["sentiment_score"] * 0.30
 _ticket_c    = kpis["demand_index"] * 100 * 0.25
@@ -212,6 +263,85 @@ fi_html = (
 )
 st.markdown(fi_html, unsafe_allow_html=True)
 
+# ── Commercial Impact Summary (exec view — sits above the data layers) ─────────
+st.markdown('<div style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0;margin-bottom:12px">Commercial Impact Summary · signal cascade</div>', unsafe_allow_html=True)
+
+# Build the chain dynamically from loaded data
+_sent_delta   = kpis["sentiment_score"] - 65
+_sent_dir     = "up" if _sent_delta >= 0 else "down"
+_sent_node_c  = "#22c55e" if _sent_delta >= 0 else "#ef4444"
+_sent_node_bg = "#0a1f0a" if _sent_delta >= 0 else "#1f0a0a"
+_sent_txt     = f"Sentiment {_sent_dir} {'+' if _sent_delta>=0 else ''}{_sent_delta} vs league avg"
+_sent_sub     = f"Score: {kpis['sentiment_score']}/100"
+
+_dem_pct   = round(kpis["demand_index"] * 100)
+_dem_label = "Strong" if _dem_pct >= 75 else "Average" if _dem_pct >= 58 else "Below target"
+_dem_c     = "#22c55e" if _dem_pct >= 75 else "#f59e0b" if _dem_pct >= 58 else "#ef4444"
+_dem_bg    = "#0a1f0a" if _dem_pct >= 75 else "#1c1500" if _dem_pct >= 58 else "#1f0a0a"
+_dem_txt   = f"Ticket demand {_dem_label.lower()}"
+_dem_sub   = f"Avg fill: {_dem_pct}%"
+
+_sp_fixtures = sponsor_exposure.get("fixtures", [])
+_top_sp    = max(_sp_fixtures, key=lambda x: x["sponsor_index"]) if _sp_fixtures else None
+_sp_idx    = _top_sp["sponsor_index"] if _top_sp else 0
+_sp_label  = "Elevated" if _sp_idx >= 70 else "Moderate" if _sp_idx >= 50 else "Low"
+_sp_c      = "#c8f135" if _sp_idx >= 70 else "#3d9cf0" if _sp_idx >= 50 else "#6b7280"
+_sp_bg     = "#0f1a08" if _sp_idx >= 70 else "#0a1020" if _sp_idx >= 50 else "#13161d"
+_sp_txt    = f"Sponsor exposure {_sp_label.lower()}"
+_sp_sub    = f"Peak index: {_sp_idx}" + (" · DERBY" if _top_sp and _top_sp.get("is_rival") else "")
+
+# Best action: first HIGH signal, else first signal, else fallback
+_best_signal  = next((s for s in signals if s["priority"]=="HIGH"), signals[0] if signals else None)
+_action_title = _best_signal["action"] if _best_signal else "Review fan intelligence data"
+_action_why   = _best_signal["title"] if _best_signal else ""
+_action_c     = "#c8f135"
+_action_bg    = "#0f1a08"
+
+# Build narrative sentence
+_narrative = (
+    f"{_sent_txt} · {_dem_txt} at {_dem_pct}% avg capacity · "
+    f"Sponsor exposure {_sp_label.lower()} (peak index {_sp_idx}) · "
+    f"Action: {_action_title}"
+)
+
+_sent_border  = _sent_node_c + "40"
+_dem_border   = _dem_c + "40"
+_sp_border    = _sp_c + "40"
+_action_why_s = _action_why[:60] + ("..." if len(_action_why) > 60 else "")
+_arrow = '<div style="display:flex;align-items:center;padding:0 6px;color:#374151;font-size:20px;flex-shrink:0">&#8250;</div>'
+cascade_html = (
+    '<div style="background:#13161d;border:1px solid #1f2937;border-radius:10px;padding:16px 20px">'
+    + '<div style="display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin-bottom:14px">'
+    + f'<div style="background:{_sent_node_bg};border:1px solid {_sent_border};border-radius:8px 0 0 8px;padding:12px 16px;flex:1;min-width:120px">'
+    + f'<div style="font-size:8px;color:{_sent_node_c};letter-spacing:.08em;margin-bottom:5px;text-transform:uppercase">Sentiment Score</div>'
+    + f'<div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:{_sent_node_c}">{_sent_txt}</div>'
+    + f'<div style="font-size:10px;color:#4b5563;margin-top:2px">{_sent_sub}</div>'
+    + '</div>'
+    + _arrow
+    + f'<div style="background:{_dem_bg};border:1px solid {_dem_border};padding:12px 16px;flex:1;min-width:120px">'
+    + f'<div style="font-size:8px;color:{_dem_c};letter-spacing:.08em;margin-bottom:5px;text-transform:uppercase">Ticket Demand</div>'
+    + f'<div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:{_dem_c}">{_dem_label}</div>'
+    + f'<div style="font-size:10px;color:#4b5563;margin-top:2px">{_dem_sub}</div>'
+    + '</div>'
+    + _arrow
+    + f'<div style="background:{_sp_bg};border:1px solid {_sp_border};padding:12px 16px;flex:1;min-width:120px">'
+    + f'<div style="font-size:8px;color:{_sp_c};letter-spacing:.08em;margin-bottom:5px;text-transform:uppercase">Sponsor Exposure</div>'
+    + f'<div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:{_sp_c}">{_sp_label}</div>'
+    + f'<div style="font-size:10px;color:#4b5563;margin-top:2px">{_sp_sub}</div>'
+    + '</div>'
+    + _arrow
+    + f'<div style="background:{_action_bg};border:1px solid {_action_c};border-radius:0 8px 8px 0;padding:12px 16px;flex:1.4;min-width:160px">'
+    + f'<div style="font-size:8px;color:{_action_c};letter-spacing:.08em;margin-bottom:5px;text-transform:uppercase">Recommended Action</div>'
+    + f'<div style="font-size:12px;font-weight:500;color:#e8eaf0;line-height:1.4">{_action_title}</div>'
+    + f'<div style="font-size:10px;color:#4b5563;margin-top:3px;line-height:1.4">{_action_why_s}</div>'
+    + '</div>'
+    + '</div>'
+    + f'<div style="font-size:10px;color:#374151;font-style:italic;border-top:1px solid #1a1e27;padding-top:10px">&#8618; {_narrative}</div>'
+    + '</div>'
+)
+st.markdown(cascade_html, unsafe_allow_html=True)
+st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+
 # ── KPI row ───────────────────────────────────────────────────────────────────
 k1,k2,k3,k4,k5 = st.columns(5)
 sent_dir = "up" if kpis["sentiment_score"] >= 65 else "down"
@@ -234,10 +364,12 @@ with k2: st.markdown(kpi_html("Content Reach", kpis["content_reach"],
     "— YouTube · last 6 videos", "#e8eaf0", "#6b7280"), unsafe_allow_html=True)
 with k3: st.markdown(kpi_html("Ticket Demand", kpis["demand_index"],
     f"{'▲ Strong' if kpis['demand_index']>=.8 else '— Average' if kpis['demand_index']>=.65 else '▼ Below avg'}",
-    "#e8eaf0", "#22c55e" if kpis["demand_index"]>=.75 else "#f59e0b"), unsafe_allow_html=True)
+    "#e8eaf0", "#22c55e" if kpis["demand_index"]>=.75 else "#f59e0b",
+    sub_delta="0 – 1 scale &nbsp;·&nbsp; 0 = no demand, 1 = sold out"), unsafe_allow_html=True)
 with k4: st.markdown(kpi_html("Fan Risk Score", f"{kpis['overall_risk']}/100",
     f"{'🔴 High risk' if kpis['overall_risk']>=60 else '🟡 Medium risk' if kpis['overall_risk']>=35 else '🟢 Low risk'}",
-    risk_color, risk_color), unsafe_allow_html=True)
+    risk_color, risk_color,
+    sub_delta="0 – 100 &nbsp;·&nbsp; lower is better"), unsafe_allow_html=True)
 with k5:
     pos = league.get("position","—")
     pts = league.get("pts","—")
@@ -294,7 +426,10 @@ with col2:
         <div style="background:#13161d;border:1px solid #1f2937;border-left:3px solid {risk_c};border-radius:8px;padding:12px 14px;margin-bottom:10px">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
                 <div style="font-size:12px;color:#e8eaf0;font-weight:500">{home_tag} vs {fr['opponent']}{rival_tag}</div>
-                <div style="font-family:Syne,sans-serif;font-size:20px;font-weight:700;color:{risk_c}">{fr['risk_score']}</div>
+                <div style="text-align:right">
+                    <div style="font-family:Syne,sans-serif;font-size:20px;font-weight:700;color:{risk_c};line-height:1">{fr['risk_score']}</div>
+                    <div style="font-size:9px;color:#374151">/ 100 risk</div>
+                </div>
             </div>
             <div style="font-size:10px;color:#6b7280;margin-bottom:6px">{fr['date']} · {fr['days_away']}d away · Capacity {fr['att_pct']}%</div>
             <div style="background:#0a0c10;border-radius:4px;height:5px;overflow:hidden">
@@ -402,87 +537,6 @@ with s3:
 
 st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
-# ── Commercial Impact Summary ─────────────────────────────────────────────────
-st.markdown("<hr style='border-color:#1f2937;margin:8px 0 14px'>", unsafe_allow_html=True)
-st.markdown('<div style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0;margin-bottom:12px">Commercial Impact Summary · signal cascade</div>', unsafe_allow_html=True)
-
-# Build the chain dynamically from loaded data
-_sent_delta   = kpis["sentiment_score"] - 65
-_sent_dir     = "up" if _sent_delta >= 0 else "down"
-_sent_node_c  = "#22c55e" if _sent_delta >= 0 else "#ef4444"
-_sent_node_bg = "#0a1f0a" if _sent_delta >= 0 else "#1f0a0a"
-_sent_txt     = f"Sentiment {_sent_dir} {'+' if _sent_delta>=0 else ''}{_sent_delta} vs league avg"
-_sent_sub     = f"Score: {kpis['sentiment_score']}/100"
-
-_dem_pct   = round(kpis["demand_index"] * 100)
-_dem_label = "Strong" if _dem_pct >= 75 else "Average" if _dem_pct >= 58 else "Below target"
-_dem_c     = "#22c55e" if _dem_pct >= 75 else "#f59e0b" if _dem_pct >= 58 else "#ef4444"
-_dem_bg    = "#0a1f0a" if _dem_pct >= 75 else "#1c1500" if _dem_pct >= 58 else "#1f0a0a"
-_dem_txt   = f"Ticket demand {_dem_label.lower()}"
-_dem_sub   = f"Avg fill: {_dem_pct}%"
-
-_sp_fixtures = sponsor_exposure.get("fixtures", [])
-_top_sp    = max(_sp_fixtures, key=lambda x: x["sponsor_index"]) if _sp_fixtures else None
-_sp_idx    = _top_sp["sponsor_index"] if _top_sp else 0
-_sp_label  = "Elevated" if _sp_idx >= 70 else "Moderate" if _sp_idx >= 50 else "Low"
-_sp_c      = "#c8f135" if _sp_idx >= 70 else "#3d9cf0" if _sp_idx >= 50 else "#6b7280"
-_sp_bg     = "#0f1a08" if _sp_idx >= 70 else "#0a1020" if _sp_idx >= 50 else "#13161d"
-_sp_txt    = f"Sponsor exposure {_sp_label.lower()}"
-_sp_sub    = f"Peak index: {_sp_idx}" + (" · DERBY" if _top_sp and _top_sp.get("is_rival") else "")
-
-# Best action: first HIGH signal, else first signal, else fallback
-_best_signal  = next((s for s in signals if s["priority"]=="HIGH"), signals[0] if signals else None)
-_action_title = _best_signal["action"] if _best_signal else "Review fan intelligence data"
-_action_why   = _best_signal["title"] if _best_signal else ""
-_action_c     = "#c8f135"
-_action_bg    = "#0f1a08"
-
-# Build narrative sentence
-_narrative = (
-    f"{_sent_txt} · {_dem_txt} at {_dem_pct}% avg capacity · "
-    f"Sponsor exposure {_sp_label.lower()} (peak index {_sp_idx}) · "
-    f"Action: {_action_title}"
-)
-
-_sent_border  = _sent_node_c + "40"
-_dem_border   = _dem_c + "40"
-_sp_border    = _sp_c + "40"
-_action_why_s = _action_why[:60] + ("..." if len(_action_why) > 60 else "")
-_arrow = '<div style="display:flex;align-items:center;padding:0 6px;color:#374151;font-size:20px;flex-shrink:0">&#8250;</div>'
-cascade_html = (
-    '<div style="background:#13161d;border:1px solid #1f2937;border-radius:10px;padding:16px 20px">'
-    + '<div style="display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin-bottom:14px">'
-    + f'<div style="background:{_sent_node_bg};border:1px solid {_sent_border};border-radius:8px 0 0 8px;padding:12px 16px;flex:1;min-width:120px">'
-    + f'<div style="font-size:8px;color:{_sent_node_c};letter-spacing:.08em;margin-bottom:5px;text-transform:uppercase">Sentiment Score</div>'
-    + f'<div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:{_sent_node_c}">{_sent_txt}</div>'
-    + f'<div style="font-size:10px;color:#4b5563;margin-top:2px">{_sent_sub}</div>'
-    + '</div>'
-    + _arrow
-    + f'<div style="background:{_dem_bg};border:1px solid {_dem_border};padding:12px 16px;flex:1;min-width:120px">'
-    + f'<div style="font-size:8px;color:{_dem_c};letter-spacing:.08em;margin-bottom:5px;text-transform:uppercase">Ticket Demand</div>'
-    + f'<div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:{_dem_c}">{_dem_label}</div>'
-    + f'<div style="font-size:10px;color:#4b5563;margin-top:2px">{_dem_sub}</div>'
-    + '</div>'
-    + _arrow
-    + f'<div style="background:{_sp_bg};border:1px solid {_sp_border};padding:12px 16px;flex:1;min-width:120px">'
-    + f'<div style="font-size:8px;color:{_sp_c};letter-spacing:.08em;margin-bottom:5px;text-transform:uppercase">Sponsor Exposure</div>'
-    + f'<div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:{_sp_c}">{_sp_label}</div>'
-    + f'<div style="font-size:10px;color:#4b5563;margin-top:2px">{_sp_sub}</div>'
-    + '</div>'
-    + _arrow
-    + f'<div style="background:{_action_bg};border:1px solid {_action_c};border-radius:0 8px 8px 0;padding:12px 16px;flex:1.4;min-width:160px">'
-    + f'<div style="font-size:8px;color:{_action_c};letter-spacing:.08em;margin-bottom:5px;text-transform:uppercase">Recommended Action</div>'
-    + f'<div style="font-size:12px;font-weight:500;color:#e8eaf0;line-height:1.4">{_action_title}</div>'
-    + f'<div style="font-size:10px;color:#4b5563;margin-top:3px;line-height:1.4">{_action_why_s}</div>'
-    + '</div>'
-    + '</div>'
-    + f'<div style="font-size:10px;color:#374151;font-style:italic;border-top:1px solid #1a1e27;padding-top:10px">&#8618; {_narrative}</div>'
-    + '</div>'
-)
-st.markdown(cascade_html, unsafe_allow_html=True)
-
-st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-
 # ── Fan Cohort Breakdown ──────────────────────────────────────────────────────
 st.markdown("<hr style='border-color:#1f2937;margin:8px 0 14px'>", unsafe_allow_html=True)
 st.markdown('<div style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0;margin-bottom:12px">Fan cohort breakdown · at-risk segments</div>', unsafe_allow_html=True)
@@ -499,7 +553,8 @@ for i, cohort in enumerate(cohorts):
         <div style="background:#13161d;border:1px solid #1f2937;border-top:3px solid {risk_c};border-radius:8px;padding:14px 12px;height:100%">
             <div style="font-size:11px;color:#e8eaf0;font-weight:500;margin-bottom:8px">{cohort['name']}</div>
             <div style="font-family:Syne,sans-serif;font-size:26px;font-weight:800;color:{risk_c};line-height:1">{r}</div>
-            <div style="font-size:9px;color:{risk_c};margin-bottom:8px;letter-spacing:.05em">{risk_label}</div>
+            <div style="font-size:9px;color:{risk_c};margin-bottom:2px;letter-spacing:.05em">{risk_label}</div>
+            <div style="font-size:9px;color:#374151;margin-bottom:8px">risk score · 0 – 100</div>
             <div style="background:#0a0c10;border-radius:3px;height:4px;margin-bottom:8px;overflow:hidden">
                 <div style="width:{r}%;height:100%;background:{risk_c};border-radius:3px"></div>
             </div>
@@ -589,7 +644,8 @@ for i, cr in enumerate(churn_risks):
         <div style="background:#13161d;border:1px solid #1f2937;border-top:3px solid {rc};border-radius:8px;padding:14px 12px;height:100%">
             <div style="font-size:11px;color:#e8eaf0;font-weight:500;margin-bottom:8px">{cr['name']}</div>
             <div style="font-family:Syne,sans-serif;font-size:28px;font-weight:800;color:{rc};line-height:1">{churn}%</div>
-            <div style="font-size:9px;color:{rc};margin-bottom:8px;letter-spacing:.05em">CHURN RISK</div>
+            <div style="font-size:9px;color:{rc};margin-bottom:2px;letter-spacing:.05em">CHURN RISK</div>
+            <div style="font-size:9px;color:#374151;margin-bottom:8px">% of cohort at risk of lapsing</div>
             <div style="background:#0a0c10;border-radius:3px;height:4px;margin-bottom:10px;overflow:hidden">
                 <div style="width:{churn}%;height:100%;background:{rc};border-radius:3px"></div>
             </div>
@@ -621,14 +677,17 @@ if player_influence:
                 <div style="background:#0a0c10;border-radius:6px;padding:8px;text-align:center">
                     <div style="font-size:9px;color:#6b7280;margin-bottom:2px">Sentiment lift</div>
                     <div style="font-family:Syne,sans-serif;font-size:18px;font-weight:700;color:#c8f135">+{top_player['sentiment_lift']}</div>
+                    <div style="font-size:8px;color:#374151">pts above club avg</div>
                 </div>
                 <div style="background:#0a0c10;border-radius:6px;padding:8px;text-align:center">
                     <div style="font-size:9px;color:#6b7280;margin-bottom:2px">Engagement ×</div>
                     <div style="font-family:Syne,sans-serif;font-size:18px;font-weight:700;color:#3d9cf0">{top_player['engagement_mult']}x</div>
+                    <div style="font-size:8px;color:#374151">vs club baseline</div>
                 </div>
                 <div style="background:#0a0c10;border-radius:6px;padding:8px;text-align:center">
                     <div style="font-size:9px;color:#6b7280;margin-bottom:2px">Merch index</div>
                     <div style="font-family:Syne,sans-serif;font-size:18px;font-weight:700;color:#a78bfa">{top_player['merch_index']}</div>
+                    <div style="font-size:8px;color:#374151">0 – 100 demand score</div>
                 </div>
                 <div style="background:#0a0c10;border-radius:6px;padding:8px;text-align:center">
                     <div style="font-size:9px;color:#6b7280;margin-bottom:2px">Mktg value</div>
@@ -642,9 +701,9 @@ if player_influence:
         <div style="display:grid;grid-template-columns:28px 1fr 80px 80px 90px 80px;gap:6px;padding:0 14px;margin-bottom:6px">
             <div style="font-size:9px;color:#4b5563">#</div>
             <div style="font-size:9px;color:#4b5563">PLAYER</div>
-            <div style="font-size:9px;color:#4b5563;text-align:center">SENT LIFT</div>
-            <div style="font-size:9px;color:#4b5563;text-align:center">ENG ×</div>
-            <div style="font-size:9px;color:#4b5563;text-align:center">MERCH IDX</div>
+            <div style="font-size:9px;color:#4b5563;text-align:center">SENT LIFT<br><span style="font-size:8px;color:#374151">pts vs avg</span></div>
+            <div style="font-size:9px;color:#4b5563;text-align:center">ENG ×<br><span style="font-size:8px;color:#374151">vs baseline</span></div>
+            <div style="font-size:9px;color:#4b5563;text-align:center">MERCH IDX<br><span style="font-size:8px;color:#374151">0 – 100</span></div>
             <div style="font-size:9px;color:#4b5563;text-align:center">MKTG VAL</div>
         </div>"""
         st.markdown(header_html, unsafe_allow_html=True)
@@ -727,6 +786,6 @@ if sp_fixtures:
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div style="font-size:10px;color:#374151;text-align:center;padding:20px 0 8px;border-top:1px solid #1f2937;margin-top:16px">
-    FanIntel WSL · Built for Two Circles pitch · May 2025 ·
+    FanIntel WSL · May 2025 ·
     Live: YouTube + Reddit · Simulated: X, TikTok, Ticketing · Not production data
 </div>""", unsafe_allow_html=True)

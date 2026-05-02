@@ -268,14 +268,17 @@ def _render_player_welfare(club_name: str):
         fillcolor="rgba(239,68,68,0.08)",
     ))
     for md in match_days:
-        fig_tl.add_vline(
-            x=md,
-            line_dash="dot",
-            line_color="#f59e0b",
-            line_width=1,
-            annotation_text="Match day",
-            annotation_font=dict(size=9, color="#f59e0b"),
-            annotation_position="top right",
+        fig_tl.add_shape(
+            type="line",
+            x0=pd.Timestamp(md), x1=pd.Timestamp(md),
+            y0=0, y1=1, yref="paper",
+            line=dict(dash="dot", color="#f59e0b", width=1),
+        )
+        fig_tl.add_annotation(
+            x=pd.Timestamp(md), y=1, yref="paper",
+            text="Match day", showarrow=False,
+            font=dict(size=9, color="#f59e0b"),
+            xanchor="left", yanchor="top",
         )
     fig_tl.update_layout(
         paper_bgcolor="#13161d", plot_bgcolor="#13161d",

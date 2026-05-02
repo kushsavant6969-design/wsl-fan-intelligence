@@ -2,7 +2,8 @@ import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
-import os, sys
+import os, sys, io, random
+from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(__file__))
 from data import get_full_club_data, get_claude_recommendation, WSL_CLUBS, WSL_LEAGUE_CONTEXT, PLAYER_DATA
 
@@ -102,6 +103,305 @@ def form_pill_comp(result, comp):
         f'</div>'
     )
 
+# ── Player Welfare: data generation ─────────────────────────────────────────
+
+_WELFARE_TEMPLATES = [
+    # Threats
+    {"text": "Watch your back {player}, you don't belong in this league", "category": "Threat", "base_score": 92},
+    {"text": "Hope something bad happens to {player} after what she did", "category": "Threat", "base_score": 88},
+    {"text": "{player} better not show up to the next game, just saying", "category": "Threat", "base_score": 85},
+    {"text": "Someone needs to sort {player} out for real", "category": "Threat", "base_score": 89},
+    # Slurs
+    {"text": "Can't believe they let {player} play, absolute [slur removed]", "category": "Slur", "base_score": 94},
+    {"text": "{player} is a [slur] and shouldn't be in women's football", "category": "Slur", "base_score": 96},
+    {"text": "That {player} [slur] deserved to miss that penalty lmao", "category": "Slur", "base_score": 91},
+    # Identity attacks
+    {"text": "{player} shouldn't be playing, women like her ruin the sport", "category": "Identity Attack", "base_score": 78},
+    {"text": "No wonder {player} plays like that, they're all the same tbh", "category": "Identity Attack", "base_score": 81},
+    {"text": "{player} and her type have no place in sport", "category": "Identity Attack", "base_score": 84},
+    {"text": "The problem with {player} is exactly what's wrong with this generation", "category": "Identity Attack", "base_score": 76},
+    # Abuse
+    {"text": "{player} is genuinely pathetic, absolute fraud of a footballer", "category": "Abuse", "base_score": 62},
+    {"text": "Overrated garbage, {player} should be dropped permanently", "category": "Abuse", "base_score": 55},
+    {"text": "{player} is embarrassing herself and this club every single game", "category": "Abuse", "base_score": 60},
+    {"text": "lol {player} can't even trap a ball, waste of a shirt", "category": "Abuse", "base_score": 50},
+    {"text": "{player} is the worst signing in WSL history, pathetic", "category": "Abuse", "base_score": 58},
+    {"text": "Honestly {player} just give up, you're not good enough", "category": "Abuse", "base_score": 54},
+]
+
+_FAKE_ACCOUNTS = [
+    "anon_hater_88", "footy_troll_uk", "burner_fc_2024", "real_talk_777", "shadow_lad_99",
+    "hate_brigade_x", "keyboard_warrior23", "dark_footy_fan", "anon_rage_4ever", "troll_king_wsl",
+    "faceless_critic", "rage_merchant_7", "hater_of_wsl", "burner_acc_2025", "shadow_menace_fc",
+    "notmyrealname99", "anon_strike_88", "pure_troll_01", "hidden_user_x12", "footy_rager_uk",
+]
+
+def _generate_welfare_data(club_name: str):
+    rng = random.Random(hash(club_name) % (2**31))
+    players = [p["name"] for p in PLAYER_DATA.get(club_name, PLAYER_DATA.get("WSL Overall", []))]
+    if not players:
+        players = ["Player A", "Player B", "Player C"]
+
+    today = datetime(2025, 5, 1)
+    # Simulate match days in the last 30 days
+    match_days = [(today - timedelta(days=d)).date() for d in [3, 10, 17, 24]]
+
+    platforms = ["Twitter/X", "Instagram", "YouTube"]
+    records = []
+    n = rng.randint(110, 160)
+    for _ in range(n):
+        tmpl = rng.choice(_WELFARE_TEMPLATES)
+        player = rng.choice(players)
+        days_ago = rng.choices(
+            range(30),
+            weights=[max(1, 15 - abs(d - md.day % 30)) for d in range(30) for md in match_days[:1]],
+            k=1
+        )[0]
+        # Spike posts near match days
+        near_match = any(abs(days_ago - (today - timedelta(days=0)).day + md.day) < 2 for md in match_days)
+        post_date = today - timedelta(days=days_ago, hours=rng.randint(0, 23))
+        score = min(100, tmpl["base_score"] + rng.randint(-8, 8) + (5 if near_match else 0))
+        severity = "HIGH" if score >= 80 else "MED" if score >= 55 else "LOW"
+        platform = rng.choices(platforms, weights=[55, 30, 15])[0]
+        account = rng.choice(_FAKE_ACCOUNTS) + str(rng.randint(10, 99))
+        records.append({
+            "timestamp": post_date,
+            "player": player,
+            "platform": platform,
+            "category": tmpl["category"],
+            "text": tmpl["text"].format(player=player.split()[0]),
+            "toxicity_score": score,
+            "severity": severity,
+            "account": account,
+        })
+
+    df = pd.DataFrame(records).sort_values("timestamp", ascending=False).reset_index(drop=True)
+    return df, [md.strftime("%Y-%m-%d") for md in match_days]
+
+
+def _render_player_welfare(club_name: str):
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+    st.markdown(
+        '<div style="background:#1f0a0a;border:1px solid #ef444440;border-radius:8px;padding:8px 16px;margin-bottom:18px">'
+        '<span style="font-size:10px;color:#ef4444">⚠ SIMULATED DATA — </span>'
+        '<span style="font-size:10px;color:#6b7280">All social posts below are synthetic and generated for demonstration purposes only. '
+        'YouTube data is live. This tool is a proof of concept for safeguarding teams.</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    df, match_days = _generate_welfare_data(club_name)
+
+    # ── KPIs ──────────────────────────────────────────────────────────────────
+    total = len(df)
+    high_count = (df["severity"] == "HIGH").sum()
+    players_targeted = df["player"].nunique()
+    accounts_flagged = df["account"].nunique()
+
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        st.markdown(kpi_html("Total Flagged Posts", str(total), "Last 30 days", color="#ef4444"), unsafe_allow_html=True)
+    with k2:
+        st.markdown(kpi_html("High Severity", str(high_count), f"{round(high_count/total*100)}% of total", color="#ef4444"), unsafe_allow_html=True)
+    with k3:
+        st.markdown(kpi_html("Players Targeted", str(players_targeted), "Unique individuals", color="#f59e0b"), unsafe_allow_html=True)
+    with k4:
+        st.markdown(kpi_html("Flagged Accounts", str(accounts_flagged), "Unique abusive accounts", color="#f59e0b"), unsafe_allow_html=True)
+
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+
+    # ── Row 1: Player targeting bar + Platform donut ───────────────────────────
+    ch1, ch2 = st.columns([3, 2])
+
+    with ch1:
+        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Players Most Targeted</div>', unsafe_allow_html=True)
+        player_counts = df.groupby("player").size().sort_values(ascending=True)
+        fig_players = go.Figure(go.Bar(
+            x=player_counts.values,
+            y=player_counts.index,
+            orientation="h",
+            marker_color="#ef4444",
+            marker_line_width=0,
+        ))
+        fig_players.update_layout(
+            paper_bgcolor="#13161d", plot_bgcolor="#13161d",
+            margin=dict(l=0, r=10, t=10, b=10),
+            height=260,
+            xaxis=dict(showgrid=False, color="#4b5563", tickfont=dict(size=10, color="#6b7280")),
+            yaxis=dict(showgrid=False, color="#4b5563", tickfont=dict(size=10, color="#9ca3af")),
+            font=dict(family="DM Mono, monospace"),
+        )
+        st.plotly_chart(fig_players, use_container_width=True, key="welfare_player_bar")
+
+    with ch2:
+        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Platform Breakdown</div>', unsafe_allow_html=True)
+        plat_counts = df["platform"].value_counts()
+        fig_plat = go.Figure(go.Pie(
+            labels=plat_counts.index,
+            values=plat_counts.values,
+            hole=0.55,
+            marker_colors=["#ef4444", "#f59e0b", "#3d9cf0"],
+            textfont=dict(size=10, family="DM Mono, monospace"),
+        ))
+        fig_plat.update_layout(
+            paper_bgcolor="#13161d",
+            margin=dict(l=0, r=0, t=10, b=10),
+            height=260,
+            legend=dict(font=dict(size=10, color="#6b7280", family="DM Mono, monospace"), bgcolor="rgba(0,0,0,0)"),
+            font=dict(family="DM Mono, monospace"),
+        )
+        st.plotly_chart(fig_plat, use_container_width=True, key="welfare_platform_donut")
+
+    # ── Abuse timeline ─────────────────────────────────────────────────────────
+    st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">30-Day Abuse Timeline</div>', unsafe_allow_html=True)
+    df["date"] = df["timestamp"].dt.date
+    daily = df.groupby("date").size().reset_index(name="count")
+    daily["date"] = pd.to_datetime(daily["date"])
+
+    fig_tl = go.Figure(go.Scatter(
+        x=daily["date"],
+        y=daily["count"],
+        mode="lines+markers",
+        line=dict(color="#ef4444", width=2),
+        marker=dict(color="#ef4444", size=5),
+        fill="tozeroy",
+        fillcolor="rgba(239,68,68,0.08)",
+    ))
+    for md in match_days:
+        fig_tl.add_vline(
+            x=md,
+            line_dash="dot",
+            line_color="#f59e0b",
+            line_width=1,
+            annotation_text="Match day",
+            annotation_font=dict(size=9, color="#f59e0b"),
+            annotation_position="top right",
+        )
+    fig_tl.update_layout(
+        paper_bgcolor="#13161d", plot_bgcolor="#13161d",
+        margin=dict(l=0, r=10, t=20, b=10),
+        height=200,
+        xaxis=dict(showgrid=False, color="#4b5563", tickfont=dict(size=10, color="#6b7280")),
+        yaxis=dict(showgrid=False, color="#4b5563", tickfont=dict(size=10, color="#6b7280"), title="Posts"),
+        font=dict(family="DM Mono, monospace"),
+    )
+    st.plotly_chart(fig_tl, use_container_width=True, key="welfare_timeline")
+
+    # ── Row 2: Category breakdown + Abusive accounts ───────────────────────────
+    ca1, ca2 = st.columns([2, 3])
+
+    with ca1:
+        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Abuse Category Breakdown</div>', unsafe_allow_html=True)
+        cat_counts = df["category"].value_counts()
+        cat_colors = {"Threat": "#ef4444", "Slur": "#a855f7", "Identity Attack": "#f59e0b", "Abuse": "#3d9cf0"}
+        fig_cat = go.Figure(go.Bar(
+            x=cat_counts.index,
+            y=cat_counts.values,
+            marker_color=[cat_colors.get(c, "#6b7280") for c in cat_counts.index],
+            marker_line_width=0,
+        ))
+        fig_cat.update_layout(
+            paper_bgcolor="#13161d", plot_bgcolor="#13161d",
+            margin=dict(l=0, r=10, t=10, b=10),
+            height=240,
+            xaxis=dict(showgrid=False, tickfont=dict(size=10, color="#6b7280")),
+            yaxis=dict(showgrid=False, tickfont=dict(size=10, color="#6b7280")),
+            font=dict(family="DM Mono, monospace"),
+        )
+        st.plotly_chart(fig_cat, use_container_width=True, key="welfare_cat_bar")
+
+    with ca2:
+        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Abusive Account Tracker</div>', unsafe_allow_html=True)
+        acc_df = (
+            df.groupby("account")
+            .agg(posts=("text", "count"), avg_toxicity=("toxicity_score", "mean"), top_category=("category", lambda x: x.mode()[0]))
+            .sort_values("posts", ascending=False)
+            .head(8)
+            .reset_index()
+        )
+        acc_df["avg_toxicity"] = acc_df["avg_toxicity"].round(1)
+
+        header_html = (
+            '<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1.5fr;gap:6px;'
+            'padding:5px 10px;background:#0a0c10;border-radius:5px 5px 0 0;margin-bottom:2px">'
+            + ''.join(f'<div style="font-size:9px;color:#4b5563;text-transform:uppercase;letter-spacing:.08em">{h}</div>'
+                      for h in ["Account", "Posts", "Avg Score", "Top Category"])
+            + '</div>'
+        )
+        rows_html = ""
+        for _, row in acc_df.iterrows():
+            sev_c = "#ef4444" if row["avg_toxicity"] >= 80 else "#f59e0b" if row["avg_toxicity"] >= 55 else "#22c55e"
+            rows_html += (
+                '<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1.5fr;gap:6px;'
+                'padding:6px 10px;border-bottom:1px solid #1a1e27">'
+                f'<div style="font-size:11px;color:#9ca3af">{row["account"]}</div>'
+                f'<div style="font-size:11px;color:#e8eaf0">{row["posts"]}</div>'
+                f'<div style="font-size:11px;color:{sev_c};font-weight:600">{row["avg_toxicity"]}</div>'
+                f'<div style="font-size:11px;color:#6b7280">{row["top_category"]}</div>'
+                '</div>'
+            )
+        st.markdown(
+            card(header_html + rows_html, padding="0", bg="#13161d"),
+            unsafe_allow_html=True,
+        )
+
+    # ── Post browser ──────────────────────────────────────────────────────────
+    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+    st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">Post Browser</div>', unsafe_allow_html=True)
+
+    f1, f2, f3 = st.columns(3)
+    with f1:
+        filter_severity = st.multiselect("Severity", ["HIGH", "MED", "LOW"], default=["HIGH", "MED"], key="wf_sev")
+    with f2:
+        filter_cat = st.multiselect("Category", sorted(df["category"].unique()), default=sorted(df["category"].unique()), key="wf_cat")
+    with f3:
+        filter_platform = st.multiselect("Platform", sorted(df["platform"].unique()), default=sorted(df["platform"].unique()), key="wf_plat")
+
+    filtered = df[
+        df["severity"].isin(filter_severity) &
+        df["category"].isin(filter_cat) &
+        df["platform"].isin(filter_platform)
+    ].head(25)
+
+    sev_colors = {"HIGH": "#ef4444", "MED": "#f59e0b", "LOW": "#22c55e"}
+    sev_bg     = {"HIGH": "#1f0a0a", "MED": "#1c1500", "LOW": "#0a1f0a"}
+
+    for _, row in filtered.iterrows():
+        sc = sev_colors.get(row["severity"], "#6b7280")
+        sb = sev_bg.get(row["severity"], "#13161d")
+        post_html = (
+            f'<div style="background:{sb};border:1px solid {sc}30;border-radius:8px;padding:12px 16px;margin-bottom:8px">'
+            f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+            f'<div style="font-size:10px;color:#4b5563">'
+            f'<span style="color:#9ca3af">{row["account"]}</span> · {row["platform"]} · '
+            f'{row["timestamp"].strftime("%d %b %H:%M")}'
+            f'</div>'
+            f'<div style="display:flex;gap:6px;align-items:center">'
+            f'<span style="background:#13161d;color:{sc};border:1px solid {sc};font-size:9px;padding:2px 7px;border-radius:8px">{row["severity"]}</span>'
+            f'<span style="background:#13161d;color:#6b7280;border:1px solid #2a2f3d;font-size:9px;padding:2px 7px;border-radius:8px">{row["category"]}</span>'
+            f'<span style="background:#13161d;color:#c8f135;border:1px solid #c8f13550;font-size:9px;padding:2px 7px;border-radius:8px">Score: {row["toxicity_score"]}</span>'
+            f'</div></div>'
+            f'<div style="font-size:12px;color:#e8eaf0;font-style:italic">"{row["text"]}"</div>'
+            f'<div style="font-size:10px;color:#4b5563;margin-top:6px">Targeting: <span style="color:#9ca3af">{row["player"]}</span></div>'
+            f'</div>'
+        )
+        st.markdown(post_html, unsafe_allow_html=True)
+
+    # ── CSV export ─────────────────────────────────────────────────────────────
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+    export_df = df[["timestamp", "platform", "account", "player", "category", "severity", "toxicity_score", "text"]].copy()
+    export_df["timestamp"] = export_df["timestamp"].dt.strftime("%Y-%m-%d %H:%M")
+    csv_buf = io.StringIO()
+    export_df.to_csv(csv_buf, index=False)
+    st.download_button(
+        label="⬇ Download Abuse Report CSV",
+        data=csv_buf.getvalue(),
+        file_name=f"welfare_report_{club_name.replace(' ', '_').lower()}_{datetime.now().strftime('%Y%m%d')}.csv",
+        mime="text/csv",
+        key="welfare_csv_download",
+    )
+
+
 # ── Data transparency banner ─────────────────────────────────────────────────
 st.markdown("""
 <div style="background:#0d1117;border:1px solid #1a1e27;border-radius:8px;padding:7px 16px;margin-bottom:18px;display:flex;align-items:center;justify-content:center;gap:12px">
@@ -134,7 +434,15 @@ st.markdown("<hr style='border-color:#1f2937;margin:14px 0 12px'>", unsafe_allow
 
 # ── Club tabs ─────────────────────────────────────────────────────────────────
 selected = st.radio("Club", list(WSL_CLUBS.keys()), horizontal=True)
+st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+
+# ── Page nav ──────────────────────────────────────────────────────────────────
+page_nav = st.radio("Page", ["📊 Dashboard", "🛡 Player Welfare"], horizontal=True, key="page_nav")
 st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+if page_nav == "🛡 Player Welfare":
+    _render_player_welfare(selected)
+    st.stop()
 
 # ── Load ──────────────────────────────────────────────────────────────────────
 with st.spinner(f"Pulling fan intelligence for {selected}..."):

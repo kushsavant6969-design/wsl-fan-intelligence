@@ -2,7 +2,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
-import os, sys, io, random
+import os, sys, io, random, math
 from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(__file__))
 from data import get_full_club_data, get_claude_recommendation, WSL_CLUBS, WSL_LEAGUE_CONTEXT, PLAYER_DATA
@@ -405,6 +405,663 @@ def _render_player_welfare(club_name: str):
     )
 
 
+# ── Sponsorship Intelligence ─────────────────────────────────────────────────
+
+_SPONSOR_CATS = [
+    {"category": "Sports Apparel",        "fit": "HIGH", "brands": "Nike, Adidas, New Balance",    "reason": "Strong female 18-35 core audience"},
+    {"category": "Healthcare / Wellbeing","fit": "HIGH", "brands": "Vitality, Boots, Bupa",         "reason": "Health-conscious fan demographic"},
+    {"category": "Financial Services",    "fit": "MED",  "brands": "Barclays, Starling, Monzo",     "reason": "Growing 26-45 high-earning bracket"},
+    {"category": "Tech & Productivity",   "fit": "MED",  "brands": "Adobe, Microsoft, Canva",       "reason": "High digital engagement index"},
+    {"category": "Food & Beverage",       "fit": "LOW",  "brands": "Lucozade, Greggs, Uber Eats",   "reason": "Matchday concession opportunity"},
+]
+
+def _gen_sponsorship_data(club_name: str, d: dict) -> dict:
+    rng = random.Random(hash(club_name + "sponsor2025") % (2**31))
+    sentiment = d["kpis"]["sentiment_score"]
+    demand    = d["kpis"]["demand_index"] * 100
+    risk      = d["kpis"]["overall_risk"]
+    pitch_score = min(100, max(30, round(sentiment * 0.35 + demand * 0.30 + (100 - risk) * 0.25 + rng.uniform(0, 10))))
+
+    age_w = [rng.randint(18, 32), rng.randint(28, 40), rng.randint(18, 28), rng.randint(8, 18)]
+    total_a = sum(age_w)
+    age_pcts = [round(w / total_a * 100) for w in age_w]
+
+    female_pct = rng.randint(52, 68)
+    other_pct  = rng.randint(2, 5)
+    male_pct   = 100 - female_pct - other_pct
+
+    country_names = ["England", "USA", "Germany", "Spain", "Australia"]
+    country_pcts  = sorted([rng.randint(5, 50) for _ in country_names], reverse=True)
+    total_c = sum(country_pcts)
+    country_pcts  = [round(p / total_c * 100) for p in country_pcts]
+
+    base_avg = round(demand * 0.4 + sentiment * 0.3 + (100 - risk) * 0.3)
+    scores = [max(0, min(100, rng.gauss(base_avg, 18))) for _ in range(300)]
+
+    segs     = ["Season Ticket", "Regular Fan", "Casual Fan", "Lapsed Fan"]
+    seg_comm = [rng.randint(70, 95), rng.randint(50, 75), rng.randint(30, 55), rng.randint(10, 30)]
+    seg_size = [rng.randint(8, 18),  rng.randint(25, 40), rng.randint(30, 45), rng.randint(10, 25)]
+
+    return dict(
+        pitch_score=pitch_score, age_groups=["18-25","26-35","36-45","46+"],
+        age_pcts=age_pcts, female_pct=female_pct, male_pct=male_pct, other_pct=other_pct,
+        country_names=country_names, country_pcts=country_pcts,
+        scores=scores, base_avg=base_avg,
+        segs=segs, seg_comm=seg_comm, seg_size=seg_size,
+    )
+
+
+def _render_sponsorship(club_name: str, d: dict) -> None:
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+    st.markdown(
+        '<div style="background:#1c1500;border:1px solid #f59e0b40;border-radius:8px;padding:8px 16px;margin-bottom:18px">'
+        '<span style="font-size:10px;color:#f59e0b">◯ SIMULATED — </span>'
+        '<span style="font-size:10px;color:#6b7280">Demographic and commercial data is illustrative. '
+        'Integrate your CRM for live audience quality scores.</span></div>',
+        unsafe_allow_html=True,
+    )
+
+    sd = _gen_sponsorship_data(club_name, d)
+    ps = sd["pitch_score"]
+    ps_color = "#c8f135" if ps >= 75 else "#22c55e" if ps >= 60 else "#f59e0b" if ps >= 45 else "#ef4444"
+    ps_label  = "Premium Sponsorship Property" if ps >= 75 else "Strong Audience Proposition" if ps >= 60 else "Emerging Commercial Value" if ps >= 45 else "Developing Audience"
+    ps_bg     = "#0d1700" if ps >= 75 else "#0a1f0a" if ps >= 60 else "#1c1500" if ps >= 45 else "#1f0a0a"
+
+    st.markdown(
+        f'<div style="background:{ps_bg};border:1px solid {ps_color}40;border-radius:12px;padding:20px 28px;'
+        f'margin-bottom:18px;display:flex;align-items:center;gap:28px">'
+        f'<div style="text-align:center;min-width:110px">'
+        f'<div style="font-size:9px;color:{ps_color};letter-spacing:.1em;margin-bottom:4px;text-transform:uppercase">Sponsorship Pitch Score</div>'
+        f'<div style="font-family:Syne,sans-serif;font-size:58px;font-weight:800;color:{ps_color};line-height:1">{ps}</div>'
+        f'<div style="font-size:10px;color:#4b5563;margin-top:2px">out of 100</div></div>'
+        f'<div style="flex:1">'
+        f'<div style="font-size:13px;color:{ps_color};font-weight:600;margin-bottom:6px">{ps_label}</div>'
+        f'<div style="background:#0a0c10;border-radius:5px;height:6px;overflow:hidden;margin-bottom:12px">'
+        f'<div style="width:{ps}%;height:100%;background:{ps_color};border-radius:5px"></div></div>'
+        f'<div style="font-size:11px;color:#6b7280;line-height:1.6">'
+        f'Composite of fan sentiment ({d["kpis"]["sentiment_score"]}/100), ticket demand '
+        f'({round(d["kpis"]["demand_index"]*100)}%), and risk-adjusted commercial score. '
+        f'Benchmarked against WSL average of 58.</div></div></div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── KPIs ──
+    k1, k2, k3, k4 = st.columns(4)
+    with k1: st.markdown(kpi_html("Female Audience", f"{sd['female_pct']}%", "of total fanbase", "#c8f135"), unsafe_allow_html=True)
+    with k2: st.markdown(kpi_html("Core Demo 18-35", f"{sd['age_pcts'][0]+sd['age_pcts'][1]}%", "highest commercial value band", "#22c55e"), unsafe_allow_html=True)
+    with k3: st.markdown(kpi_html("Top Market", sd["country_names"][0], f"{sd['country_pcts'][0]}% of audience", "#3d9cf0"), unsafe_allow_html=True)
+    with k4: st.markdown(kpi_html("Avg Commercial Score", str(sd["base_avg"]), "fan commercial value index", "#f59e0b"), unsafe_allow_html=True)
+
+    st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
+
+    # ── Row 1: Age donut + Gender bar + Country ──
+    r1a, r1b, r1c = st.columns(3)
+
+    with r1a:
+        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Age Distribution</div>', unsafe_allow_html=True)
+        age_colors = ["#c8f135", "#22c55e", "#3d9cf0", "#6b7280"]
+        fig_age = go.Figure(go.Pie(
+            labels=sd["age_groups"], values=sd["age_pcts"], hole=0.55,
+            marker_colors=age_colors, textfont=dict(size=10, family="DM Mono, monospace"),
+        ))
+        fig_age.update_layout(
+            paper_bgcolor="#13161d", margin=dict(l=0,r=0,t=10,b=10), height=220,
+            legend=dict(font=dict(size=10,color="#6b7280",family="DM Mono, monospace"),bgcolor="rgba(0,0,0,0)"),
+            font=dict(family="DM Mono, monospace"),
+        )
+        st.plotly_chart(fig_age, use_container_width=True, key="sp_age_donut", config={"displayModeBar":False})
+
+    with r1b:
+        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Gender Split</div>', unsafe_allow_html=True)
+        genders = ["Female", "Male", "Other"]
+        g_vals  = [sd["female_pct"], sd["male_pct"], sd["other_pct"]]
+        g_cols  = ["#c8f135", "#3d9cf0", "#6b7280"]
+        fig_gen = go.Figure(go.Bar(
+            y=genders, x=g_vals, orientation="h",
+            marker_color=g_cols, marker_line_width=0,
+            text=[f"{v}%" for v in g_vals], textposition="inside",
+            textfont=dict(size=11, color="#0a0c10"),
+        ))
+        fig_gen.update_layout(
+            paper_bgcolor="#13161d", plot_bgcolor="#13161d",
+            margin=dict(l=0,r=10,t=10,b=10), height=220,
+            xaxis=dict(showgrid=False, visible=False),
+            yaxis=dict(showgrid=False, tickfont=dict(size=11,color="#9ca3af")),
+            font=dict(family="DM Mono, monospace"),
+        )
+        st.plotly_chart(fig_gen, use_container_width=True, key="sp_gender_bar", config={"displayModeBar":False})
+
+    with r1c:
+        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Top Audience Markets</div>', unsafe_allow_html=True)
+        mkt_html = ""
+        for cn, cp in zip(sd["country_names"], sd["country_pcts"]):
+            mkt_html += (
+                f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+                f'<div style="font-size:11px;color:#9ca3af;min-width:90px">{cn}</div>'
+                f'<div style="flex:1;background:#0a0c10;border-radius:3px;height:8px;overflow:hidden">'
+                f'<div style="width:{cp}%;height:100%;background:#3d9cf0;border-radius:3px"></div></div>'
+                f'<div style="font-size:11px;color:#6b7280;min-width:32px;text-align:right">{cp}%</div></div>'
+            )
+        st.markdown(card(mkt_html, padding="14px 16px"), unsafe_allow_html=True)
+
+    # ── Row 2: Commercial score histogram + Segment quality ──
+    r2a, r2b = st.columns(2)
+
+    with r2a:
+        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Commercial Score Distribution</div>', unsafe_allow_html=True)
+        buckets = list(range(0, 105, 5))
+        counts  = [0] * (len(buckets) - 1)
+        for s in sd["scores"]:
+            i = min(int(s // 5), len(counts) - 1)
+            counts[i] += 1
+        midpoints = [(buckets[i] + buckets[i+1]) / 2 for i in range(len(buckets)-1)]
+        bar_colors = ["#c8f135" if m >= 70 else "#22c55e" if m >= 50 else "#3d9cf0" if m >= 30 else "#4b5563" for m in midpoints]
+        fig_hist = go.Figure(go.Bar(
+            x=midpoints, y=counts, marker_color=bar_colors, marker_line_width=0,
+        ))
+        fig_hist.add_shape(type="line", x0=sd["base_avg"], x1=sd["base_avg"], y0=0, y1=1,
+                           yref="paper", line=dict(color="#f59e0b", width=2, dash="dot"))
+        fig_hist.add_annotation(x=sd["base_avg"], y=1, yref="paper", text=f"Avg {sd['base_avg']}",
+                                showarrow=False, font=dict(size=9, color="#f59e0b"), xanchor="left", yanchor="top")
+        fig_hist.update_layout(
+            paper_bgcolor="#13161d", plot_bgcolor="#13161d",
+            margin=dict(l=0,r=10,t=20,b=10), height=220,
+            xaxis=dict(showgrid=False, tickfont=dict(size=10,color="#6b7280"), title=dict(text="Commercial Score",font=dict(size=10,color="#4b5563"))),
+            yaxis=dict(showgrid=False, tickfont=dict(size=10,color="#6b7280")),
+            font=dict(family="DM Mono, monospace"),
+        )
+        st.plotly_chart(fig_hist, use_container_width=True, key="sp_comm_hist", config={"displayModeBar":False})
+
+    with r2b:
+        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Audience Quality by Segment</div>', unsafe_allow_html=True)
+        seg_colors = ["#c8f135", "#22c55e", "#3d9cf0", "#6b7280"]
+        fig_seg = go.Figure(go.Bar(
+            y=sd["segs"], x=sd["seg_comm"], orientation="h",
+            marker_color=seg_colors, marker_line_width=0,
+            text=sd["seg_comm"], textposition="inside",
+            textfont=dict(size=11, color="#0a0c10"),
+        ))
+        fig_seg.update_layout(
+            paper_bgcolor="#13161d", plot_bgcolor="#13161d",
+            margin=dict(l=0,r=10,t=10,b=10), height=220,
+            xaxis=dict(showgrid=False, range=[0,100], tickfont=dict(size=10,color="#6b7280")),
+            yaxis=dict(showgrid=False, tickfont=dict(size=11,color="#9ca3af")),
+            font=dict(family="DM Mono, monospace"),
+        )
+        st.plotly_chart(fig_seg, use_container_width=True, key="sp_seg_bar", config={"displayModeBar":False})
+
+    # ── Sponsor recommendations ──
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+    st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">Top Sponsor Category Recommendations</div>', unsafe_allow_html=True)
+
+    fit_colors = {"HIGH": "#22c55e", "MED": "#f59e0b", "LOW": "#6b7280"}
+    fit_bg     = {"HIGH": "#052e16", "MED": "#1c1500", "LOW": "#13161d"}
+    rec_html   = (
+        '<div style="display:grid;grid-template-columns:1.4fr 1fr 2fr 2.5fr;gap:6px;'
+        'padding:5px 12px;background:#0a0c10;border-radius:5px 5px 0 0;margin-bottom:2px">'
+        + "".join(f'<div style="font-size:9px;color:#4b5563;text-transform:uppercase;letter-spacing:.08em">{h}</div>'
+                  for h in ["Category", "Fit", "Example Brands", "Why"])
+        + "</div>"
+    )
+    for cat in _SPONSOR_CATS:
+        fc = fit_colors.get(cat["fit"], "#6b7280")
+        fb = fit_bg.get(cat["fit"], "#13161d")
+        rec_html += (
+            f'<div style="display:grid;grid-template-columns:1.4fr 1fr 2fr 2.5fr;gap:6px;'
+            f'padding:8px 12px;border-bottom:1px solid #1a1e27;align-items:center">'
+            f'<div style="font-size:11px;color:#e8eaf0">{cat["category"]}</div>'
+            f'<div><span style="background:{fb};color:{fc};border:1px solid {fc};font-size:9px;padding:2px 8px;border-radius:8px">{cat["fit"]}</span></div>'
+            f'<div style="font-size:10px;color:#6b7280">{cat["brands"]}</div>'
+            f'<div style="font-size:10px;color:#4b5563">{cat["reason"]}</div></div>'
+        )
+    st.markdown(card(rec_html, padding="0", bg="#13161d"), unsafe_allow_html=True)
+
+    # ── PDF download ──
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    try:
+        from fpdf import FPDF
+        def _ps(t):
+            return str(t).replace("\u2014"," - ").replace("\u2013","-").replace("\u2022","-").encode("latin-1",errors="replace").decode("latin-1")
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_fill_color(10, 12, 16)
+        pdf.rect(0, 0, 210, 297, "F")
+        pdf.set_font("Helvetica", "B", 18)
+        pdf.set_text_color(200, 241, 53)
+        pdf.cell(0, 12, f"FanIntel - Sponsorship Deck", ln=True)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.set_text_color(107, 114, 128)
+        pdf.cell(0, 8, _ps(f"{club_name} - WSL Edition - {datetime.now().strftime('%B %Y')}"), ln=True)
+        pdf.ln(4)
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.set_text_color(200, 241, 53)
+        pdf.cell(0, 10, f"Pitch Score: {ps}/100 - {ps_label}", ln=True)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.set_text_color(156, 163, 175)
+        pdf.cell(0, 7, _ps(f"Female audience: {sd['female_pct']}%  |  Core 18-35: {sd['age_pcts'][0]+sd['age_pcts'][1]}%  |  Avg commercial score: {sd['base_avg']}"), ln=True)
+        pdf.ln(4)
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_text_color(200, 241, 53)
+        pdf.cell(0, 8, "Sponsor Recommendations", ln=True)
+        pdf.set_font("Helvetica", "", 10)
+        for cat in _SPONSOR_CATS:
+            pdf.set_text_color(232, 234, 240)
+            pdf.cell(0, 6, _ps(f"[{cat['fit']}] {cat['category']} - {cat['brands']}"), ln=True)
+            pdf.set_text_color(107, 114, 128)
+            pdf.cell(0, 5, _ps(f"     {cat['reason']}"), ln=True)
+        pdf.ln(4)
+        pdf.set_font("Helvetica", "I", 8)
+        pdf.set_text_color(75, 85, 99)
+        pdf.cell(0, 6, _ps("CONFIDENTIAL - Generated by FanIntel WSL Edition - Illustrative data only"), ln=True)
+        pdf_bytes = pdf.output()
+        st.download_button(
+            label="⬇ Download Sponsorship Deck PDF",
+            data=bytes(pdf_bytes),
+            file_name=f"sponsorship_deck_{club_name.replace(' ','_').lower()}_{datetime.now().strftime('%Y%m%d')}.pdf",
+            mime="application/pdf",
+            key="sp_pdf_dl",
+        )
+    except Exception:
+        st.caption("PDF export unavailable — fpdf2 not installed.")
+
+
+# ── Matchday Intelligence ─────────────────────────────────────────────────────
+
+_MATCHDAY_SEGMENTS = [
+    {"name": "Season Ticket",   "avg_spend": 18,  "color": "#c8f135"},
+    {"name": "Member",          "avg_spend": 26,  "color": "#22c55e"},
+    {"name": "General Admit.",  "avg_spend": 38,  "color": "#3d9cf0"},
+    {"name": "Hospitality",     "avg_spend": 95,  "color": "#a78bfa"},
+]
+
+def _gen_matchday_data(club_name: str, d: dict) -> dict:
+    rng = random.Random(hash(club_name + "matchday2025") % (2**31))
+    capacity = WSL_CLUBS[club_name]["capacity"]
+    fixtures = d["tickets"]["fixtures"][:3]
+
+    seg_splits = [0.35, 0.30, 0.28, 0.07]
+    fixture_rev = []
+    for f in fixtures:
+        att = round(capacity * (f["att_pct"] / 100))
+        rev = 0
+        seg_revs = []
+        for seg, split in zip(_MATCHDAY_SEGMENTS, seg_splits):
+            fans = round(att * split)
+            r    = fans * seg["avg_spend"]
+            seg_revs.append({"segment": seg["name"], "fans": fans, "revenue": r, "avg_spend": seg["avg_spend"], "color": seg["color"]})
+            rev += r
+        fixture_rev.append({"fixture": f"vs {f['opponent'].replace('Arsenal W','Arsenal').replace('Chelsea W','Chelsea').replace('Man City W','Man City').replace('Brighton W','Brighton').replace('Aston Villa W','Villa')}", "revenue": rev, "att": att, "seg_revs": seg_revs})
+
+    top_revenue_fixture = max(fixture_rev, key=lambda x: x["revenue"])
+    top_segment = max(top_revenue_fixture["seg_revs"], key=lambda x: x["revenue"])
+
+    high_potential_fans = round(capacity * rng.uniform(0.12, 0.22))
+    convert_pct         = rng.randint(5, 15)
+    additional_revenue  = round(high_potential_fans * (convert_pct / 100) * _MATCHDAY_SEGMENTS[2]["avg_spend"])
+
+    windows = ["Pre-match\n-90 to -30min", "Pre-match\n-30 to KO", "Half-time", "Post-match\n0-30min", "Post-match\n30-90min"]
+    window_eng = [
+        round(rng.uniform(20, 40)),
+        round(rng.uniform(55, 80)),
+        round(rng.uniform(70, 90)),
+        round(rng.uniform(60, 85)),
+        round(rng.uniform(25, 45)),
+    ]
+
+    hospitality_targets = []
+    for i in range(20):
+        engagement = rng.randint(72, 98)
+        hospitality_targets.append({
+            "fan_id": f"FAN-{rng.randint(10000,99999)}",
+            "engagement": engagement,
+            "last_ticket": f"{rng.randint(6,24)}mo ago",
+            "ltv_band": "HIGH" if engagement > 88 else "MED",
+            "segment": rng.choice(["Regular Fan", "Lapsed Member", "App User"]),
+        })
+    hospitality_targets.sort(key=lambda x: x["engagement"], reverse=True)
+
+    return dict(
+        fixture_rev=fixture_rev,
+        top_revenue_fixture=top_revenue_fixture,
+        top_segment=top_segment,
+        high_potential_fans=high_potential_fans,
+        convert_pct=convert_pct,
+        additional_revenue=additional_revenue,
+        windows=windows,
+        window_eng=window_eng,
+        hospitality_targets=hospitality_targets,
+        capacity=capacity,
+    )
+
+
+def _render_matchday(club_name: str, d: dict) -> None:
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+    st.markdown(
+        '<div style="background:#1c1500;border:1px solid #f59e0b40;border-radius:8px;padding:8px 16px;margin-bottom:18px">'
+        '<span style="font-size:10px;color:#f59e0b">◯ SIMULATED — </span>'
+        '<span style="font-size:10px;color:#6b7280">Revenue and hospitality data is illustrative. '
+        'Integrate ticketing CRM for live figures.</span></div>',
+        unsafe_allow_html=True,
+    )
+
+    md = _gen_matchday_data(club_name, d)
+    top_fix = md["top_revenue_fixture"]
+    top_seg = md["top_segment"]
+    avg_spend_all = round(sum(s["avg_spend"] * sp for s, sp in zip(_MATCHDAY_SEGMENTS, [0.35, 0.30, 0.28, 0.07])))
+
+    k1, k2, k3, k4 = st.columns(4)
+    with k1: st.markdown(kpi_html("Est. Revenue / Fixture", f"£{top_fix['revenue']:,.0f}", f"{top_fix['fixture']} · {top_fix['att']:,} fans", "#c8f135"), unsafe_allow_html=True)
+    with k2: st.markdown(kpi_html("Top Revenue Segment", top_seg["segment"], f"£{top_seg['revenue']:,.0f} per fixture", "#22c55e"), unsafe_allow_html=True)
+    with k3: st.markdown(kpi_html("Avg Spend / Fan", f"£{avg_spend_all}", "blended across segments", "#3d9cf0"), unsafe_allow_html=True)
+    with k4: st.markdown(kpi_html("Hospitality Targets", "20", "high-engagement, no recent ticket", "#a78bfa"), unsafe_allow_html=True)
+
+    st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
+
+    # ── Revenue opportunity callout ──
+    st.markdown(
+        f'<div style="background:#052e16;border:1px solid #22c55e40;border-radius:10px;padding:14px 20px;margin-bottom:18px">'
+        f'<span style="font-size:10px;color:#22c55e;text-transform:uppercase;letter-spacing:.08em">Revenue Opportunity </span>'
+        f'<span style="font-size:13px;color:#e8eaf0;font-weight:600"> — Converting {md["convert_pct"]}% of High Potential fans = </span>'
+        f'<span style="font-family:Syne,sans-serif;font-size:18px;font-weight:800;color:#c8f135">£{md["additional_revenue"]:,}</span>'
+        f'<span style="font-size:11px;color:#6b7280"> additional per fixture</span></div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Row 1: Revenue by segment + Avg spend ──
+    r1a, r1b = st.columns(2)
+
+    with r1a:
+        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Estimated Revenue by Segment</div>', unsafe_allow_html=True)
+        seg_revs = top_fix["seg_revs"]
+        fig_rev = go.Figure(go.Bar(
+            y=[s["segment"] for s in seg_revs],
+            x=[s["revenue"] for s in seg_revs],
+            orientation="h",
+            marker_color=[s["color"] for s in seg_revs],
+            marker_line_width=0,
+            text=[f"£{s['revenue']:,.0f}" for s in seg_revs],
+            textposition="inside",
+            textfont=dict(size=10, color="#0a0c10"),
+        ))
+        fig_rev.update_layout(
+            paper_bgcolor="#13161d", plot_bgcolor="#13161d",
+            margin=dict(l=0,r=10,t=10,b=10), height=230,
+            xaxis=dict(showgrid=False, tickfont=dict(size=10,color="#6b7280"),
+                       tickprefix="£", tickformat=",.0f"),
+            yaxis=dict(showgrid=False, tickfont=dict(size=11,color="#9ca3af")),
+            font=dict(family="DM Mono, monospace"),
+        )
+        st.plotly_chart(fig_rev, use_container_width=True, key="md_rev_bar", config={"displayModeBar":False})
+
+    with r1b:
+        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Avg Spend per Fan by Segment</div>', unsafe_allow_html=True)
+        fig_spend = go.Figure(go.Bar(
+            y=[s["name"] for s in _MATCHDAY_SEGMENTS],
+            x=[s["avg_spend"] for s in _MATCHDAY_SEGMENTS],
+            orientation="h",
+            marker_color=[s["color"] for s in _MATCHDAY_SEGMENTS],
+            marker_line_width=0,
+            text=[f"£{s['avg_spend']}" for s in _MATCHDAY_SEGMENTS],
+            textposition="inside",
+            textfont=dict(size=11, color="#0a0c10"),
+        ))
+        fig_spend.update_layout(
+            paper_bgcolor="#13161d", plot_bgcolor="#13161d",
+            margin=dict(l=0,r=10,t=10,b=10), height=230,
+            xaxis=dict(showgrid=False, tickfont=dict(size=10,color="#6b7280"), tickprefix="£"),
+            yaxis=dict(showgrid=False, tickfont=dict(size=11,color="#9ca3af")),
+            font=dict(family="DM Mono, monospace"),
+        )
+        st.plotly_chart(fig_spend, use_container_width=True, key="md_spend_bar", config={"displayModeBar":False})
+
+    # ── Engagement windows ──
+    st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Pre / During / Post Match Engagement Windows</div>', unsafe_allow_html=True)
+    window_labels = ["Pre -90to-30", "Pre -30toKO", "Half-time", "Post 0-30", "Post 30-90"]
+    fig_win = go.Figure(go.Scatter(
+        x=window_labels, y=md["window_eng"],
+        mode="lines+markers",
+        line=dict(color="#c8f135", width=3),
+        marker=dict(size=10, color="#c8f135", line=dict(color="#0a0c10", width=2)),
+        fill="tozeroy", fillcolor="rgba(200,241,53,0.07)",
+    ))
+    fig_win.add_shape(type="line", x0="Pre -30toKO", x1="Pre -30toKO", y0=0, y1=1,
+                     yref="paper", line=dict(color="#f59e0b", width=1, dash="dot"))
+    fig_win.add_annotation(x="Pre -30toKO", y=1, yref="paper", text="Kick-off",
+                           showarrow=False, font=dict(size=9, color="#f59e0b"), xanchor="left", yanchor="top")
+    fig_win.add_shape(type="line", x0="Post 0-30", x1="Post 0-30", y0=0, y1=1,
+                     yref="paper", line=dict(color="#f59e0b", width=1, dash="dot"))
+    fig_win.add_annotation(x="Post 0-30", y=0.85, yref="paper", text="Full-time",
+                           showarrow=False, font=dict(size=9, color="#f59e0b"), xanchor="left", yanchor="top")
+    fig_win.update_layout(
+        paper_bgcolor="#13161d", plot_bgcolor="#13161d",
+        margin=dict(l=0,r=10,t=20,b=10), height=200,
+        xaxis=dict(showgrid=False, tickfont=dict(size=10,color="#6b7280")),
+        yaxis=dict(showgrid=False, tickfont=dict(size=10,color="#6b7280"), title=dict(text="Engagement %", font=dict(size=10,color="#4b5563")), range=[0,100]),
+        font=dict(family="DM Mono, monospace"),
+    )
+    st.plotly_chart(fig_win, use_container_width=True, key="md_win_line", config={"displayModeBar":False})
+
+    # ── Hospitality targets table ──
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+    st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">Top 20 Hospitality Upgrade Targets</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div style="font-size:10px;color:#6b7280;margin-bottom:10px">'
+        'Fans with high engagement scores but no ticket purchase in the last 6+ months — prime upsell candidates.</div>',
+        unsafe_allow_html=True,
+    )
+
+    tbl_header = (
+        '<div style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr 1fr;gap:6px;'
+        'padding:5px 12px;background:#0a0c10;border-radius:5px 5px 0 0;margin-bottom:2px">'
+        + "".join(f'<div style="font-size:9px;color:#4b5563;text-transform:uppercase;letter-spacing:.08em">{h}</div>'
+                  for h in ["Fan ID", "Engagement", "Last Ticket", "LTV Band", "Segment"])
+        + "</div>"
+    )
+    tbl_rows = ""
+    for row in md["hospitality_targets"]:
+        ltv_c = "#c8f135" if row["ltv_band"] == "HIGH" else "#f59e0b"
+        ltv_bg = "#0d1700" if row["ltv_band"] == "HIGH" else "#1c1500"
+        eng_c  = "#22c55e" if row["engagement"] >= 88 else "#3d9cf0"
+        tbl_rows += (
+            f'<div style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr 1fr;gap:6px;'
+            f'padding:7px 12px;border-bottom:1px solid #1a1e27;align-items:center">'
+            f'<div style="font-size:10px;color:#9ca3af;font-family:DM Mono,monospace">{row["fan_id"]}</div>'
+            f'<div style="font-size:11px;color:{eng_c};font-weight:600">{row["engagement"]}</div>'
+            f'<div style="font-size:10px;color:#6b7280">{row["last_ticket"]}</div>'
+            f'<div><span style="background:{ltv_bg};color:{ltv_c};border:1px solid {ltv_c};font-size:9px;padding:2px 7px;border-radius:8px">{row["ltv_band"]}</span></div>'
+            f'<div style="font-size:10px;color:#6b7280">{row["segment"]}</div></div>'
+        )
+    st.markdown(card(tbl_header + tbl_rows, padding="0", bg="#13161d"), unsafe_allow_html=True)
+
+
+# ── Fan Acquisition Intelligence ──────────────────────────────────────────────
+
+_ACQ_MARKETS = [
+    {"country": "United States",    "iso": "USA", "priority": 0, "activation": "Digital-first: TikTok + YouTube highlight clips, partner with NWSL fanbases"},
+    {"country": "Germany",          "iso": "DEU", "priority": 0, "activation": "Bundesliga W cross-promotion, German-language content, DFB tie-ins"},
+    {"country": "Australia",        "iso": "AUS", "priority": 0, "activation": "Matildas halo effect post-2023 WWC, streaming deal push, timezone-friendly content"},
+    {"country": "Spain",            "iso": "ESP", "priority": 0, "activation": "Liga F fan crossover, Instagram-led campaign, Spanish influencer partnerships"},
+    {"country": "Netherlands",      "iso": "NLD", "priority": 0, "activation": "OranjeLeeuwinnen connection, Dutch player ambassador content"},
+    {"country": "Canada",           "iso": "CAN", "priority": 0, "activation": "CanWNT fan base, membership trial offer, bilingual content"},
+    {"country": "Brazil",           "iso": "BRA", "priority": 0, "activation": "Fastest-growing women's football market, YouTube-first content strategy"},
+    {"country": "Japan",            "iso": "JPN", "priority": 0, "activation": "Nadeshiko crossover, merchandise appeal, streaming subscription push"},
+]
+
+_AGE_TARGETS = {
+    "current": [22, 35, 28, 15],
+    "target":  [30, 32, 24, 14],
+    "labels":  ["18-25", "26-35", "36-45", "46+"],
+}
+
+def _gen_acquisition_data(club_name: str, d: dict) -> dict:
+    rng = random.Random(hash(club_name + "acquire2025") % (2**31))
+    sentiment = d["kpis"]["sentiment_score"]
+    demand    = d["kpis"]["demand_index"] * 100
+
+    markets = []
+    for i, m in enumerate(_ACQ_MARKETS):
+        base   = max(20, min(95, round(sentiment * 0.3 + demand * 0.2 + rng.randint(20, 55))))
+        decay  = max(0, (i // 2) * rng.randint(5, 12))
+        priority = max(20, base - decay + rng.randint(-5, 5))
+        fan_count = rng.randint(800, 8000) - i * rng.randint(50, 400)
+        eng  = round(rng.uniform(30, 85))
+        comm = round(rng.uniform(25, 80))
+        markets.append({**m, "priority": priority, "fan_count": max(300, fan_count), "engagement": eng, "commercial": comm})
+    markets.sort(key=lambda x: x["priority"], reverse=True)
+
+    age_gap_delta = [_AGE_TARGETS["target"][i] - _AGE_TARGETS["current"][i] + rng.randint(-3, 3)
+                     for i in range(4)]
+
+    choropleth_iso   = [m["iso"] for m in markets]
+    choropleth_vals  = [m["priority"] for m in markets]
+    choropleth_text  = [m["country"] for m in markets]
+
+    return dict(markets=markets, age_gap_delta=age_gap_delta,
+                choropleth_iso=choropleth_iso, choropleth_vals=choropleth_vals,
+                choropleth_text=choropleth_text)
+
+
+def _render_fan_acquisition(club_name: str, d: dict) -> None:
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+    st.markdown(
+        '<div style="background:#1c1500;border:1px solid #f59e0b40;border-radius:8px;padding:8px 16px;margin-bottom:18px">'
+        '<span style="font-size:10px;color:#f59e0b">◯ SIMULATED — </span>'
+        '<span style="font-size:10px;color:#6b7280">Market priority scores are illustrative. '
+        'Connect to your geo fan data for live acquisition intelligence.</span></div>',
+        unsafe_allow_html=True,
+    )
+
+    aq = _gen_acquisition_data(club_name, d)
+    top5 = aq["markets"][:5]
+
+    k1, k2, k3 = st.columns(3)
+    with k1: st.markdown(kpi_html("Top Priority Market", top5[0]["country"], f"Priority score: {top5[0]['priority']}", "#c8f135"), unsafe_allow_html=True)
+    with k2: st.markdown(kpi_html("Markets Analysed", str(len(aq["markets"])), "across 8 key territories", "#22c55e"), unsafe_allow_html=True)
+    with k3: st.markdown(kpi_html("Biggest Age Gap", "18-25", f"{abs(aq['age_gap_delta'][0]):+}pp vs target", "#f59e0b"), unsafe_allow_html=True)
+
+    st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
+
+    # ── World map ──
+    st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Global Fan Acquisition Priority Map</div>', unsafe_allow_html=True)
+    fig_map = go.Figure(go.Choropleth(
+        locations=aq["choropleth_iso"],
+        z=aq["choropleth_vals"],
+        text=aq["choropleth_text"],
+        colorscale=[[0,"#13161d"],[0.3,"#1a4020"],[0.6,"#22c55e"],[1.0,"#c8f135"]],
+        zmin=0, zmax=100,
+        marker_line_color="#2a2f3d", marker_line_width=0.5,
+        colorbar=dict(
+            title=dict(text="Priority", font=dict(color="#6b7280", size=10)),
+            tickfont=dict(color="#6b7280", size=10),
+            bgcolor="#13161d", bordercolor="#2a2f3d",
+            thickness=12,
+        ),
+        hovertemplate="<b>%{text}</b><br>Priority: %{z}<extra></extra>",
+    ))
+    fig_map.update_geos(
+        bgcolor="#0a0c10", landcolor="#1f2937", oceancolor="#0a0c10",
+        showframe=False, showcoastlines=True, coastlinecolor="#2a2f3d",
+        projection_type="natural earth",
+    )
+    fig_map.update_layout(
+        paper_bgcolor="#13161d", geo=dict(bgcolor="#0a0c10"),
+        margin=dict(l=0,r=0,t=0,b=0), height=340,
+        font=dict(family="DM Mono, monospace", color="#6b7280"),
+    )
+    st.plotly_chart(fig_map, use_container_width=True, key="aq_map", config={"displayModeBar":False})
+
+    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+
+    # ── Row 2: Priority bar + Scatter + Age gap ──
+    r2a, r2b = st.columns([1, 1])
+
+    with r2a:
+        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Acquisition Priority Score by Market</div>', unsafe_allow_html=True)
+        bar_colors = ["#c8f135" if m["priority"] >= 70 else "#22c55e" if m["priority"] >= 55 else "#3d9cf0" for m in aq["markets"]]
+        fig_pri = go.Figure(go.Bar(
+            y=[m["country"] for m in reversed(aq["markets"])],
+            x=[m["priority"] for m in reversed(aq["markets"])],
+            orientation="h",
+            marker_color=list(reversed(bar_colors)),
+            marker_line_width=0,
+            text=[str(m["priority"]) for m in reversed(aq["markets"])],
+            textposition="inside",
+            textfont=dict(size=10, color="#0a0c10"),
+        ))
+        fig_pri.update_layout(
+            paper_bgcolor="#13161d", plot_bgcolor="#13161d",
+            margin=dict(l=0,r=10,t=10,b=10), height=280,
+            xaxis=dict(showgrid=False, range=[0,100], tickfont=dict(size=10,color="#6b7280")),
+            yaxis=dict(showgrid=False, tickfont=dict(size=10,color="#9ca3af")),
+            font=dict(family="DM Mono, monospace"),
+        )
+        st.plotly_chart(fig_pri, use_container_width=True, key="aq_pri_bar", config={"displayModeBar":False})
+
+    with r2b:
+        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Market Landscape · Engagement vs Commercial</div>', unsafe_allow_html=True)
+        mkt_sizes = [max(8, m["fan_count"] // 200) for m in aq["markets"]]
+        scatter_colors = ["#c8f135" if m["priority"] >= 70 else "#22c55e" if m["priority"] >= 55 else "#3d9cf0" for m in aq["markets"]]
+        fig_scat = go.Figure(go.Scatter(
+            x=[m["engagement"] for m in aq["markets"]],
+            y=[m["commercial"] for m in aq["markets"]],
+            mode="markers+text",
+            text=[m["country"].split()[0] for m in aq["markets"]],
+            textposition="top center",
+            textfont=dict(size=9, color="#9ca3af"),
+            marker=dict(
+                size=mkt_sizes,
+                color=scatter_colors,
+                line=dict(color="#0a0c10", width=1),
+                opacity=0.85,
+            ),
+        ))
+        fig_scat.update_layout(
+            paper_bgcolor="#13161d", plot_bgcolor="#13161d",
+            margin=dict(l=0,r=10,t=10,b=30), height=280,
+            xaxis=dict(showgrid=True, gridcolor="#1f2937", title=dict(text="Engagement Score",font=dict(size=10,color="#4b5563")), tickfont=dict(size=10,color="#6b7280"), range=[0,100]),
+            yaxis=dict(showgrid=True, gridcolor="#1f2937", title=dict(text="Commercial Score",font=dict(size=10,color="#4b5563")), tickfont=dict(size=10,color="#6b7280"), range=[0,100]),
+            font=dict(family="DM Mono, monospace"),
+        )
+        st.plotly_chart(fig_scat, use_container_width=True, key="aq_scatter", config={"displayModeBar":False})
+
+    # ── Demographic gap analysis ──
+    st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Demographic Gap Analysis — Current vs Target Age Mix</div>', unsafe_allow_html=True)
+    age_labels  = _AGE_TARGETS["labels"]
+    current_pct = _AGE_TARGETS["current"]
+    target_pct  = _AGE_TARGETS["target"]
+    fig_age = go.Figure()
+    fig_age.add_trace(go.Bar(name="Current", x=age_labels, y=current_pct,
+                             marker_color="#3d9cf0", marker_line_width=0))
+    fig_age.add_trace(go.Bar(name="Target",  x=age_labels, y=target_pct,
+                             marker_color="#c8f135", marker_line_width=0))
+    fig_age.update_layout(
+        paper_bgcolor="#13161d", plot_bgcolor="#13161d",
+        margin=dict(l=0,r=10,t=10,b=10), height=200, barmode="group",
+        xaxis=dict(showgrid=False, tickfont=dict(size=11,color="#9ca3af")),
+        yaxis=dict(showgrid=False, tickfont=dict(size=10,color="#6b7280"),
+                   title=dict(text="% of fanbase", font=dict(size=10,color="#4b5563"))),
+        legend=dict(font=dict(size=10,color="#9ca3af",family="DM Mono, monospace"),bgcolor="rgba(0,0,0,0)"),
+        font=dict(family="DM Mono, monospace"),
+    )
+    st.plotly_chart(fig_age, use_container_width=True, key="aq_age_gap", config={"displayModeBar":False})
+
+    # ── Top 5 markets activation cards ──
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+    st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">Top 5 Target Markets — Activation Strategies</div>', unsafe_allow_html=True)
+    for i, m in enumerate(top5):
+        rank_c = "#c8f135" if i == 0 else "#22c55e" if i == 1 else "#3d9cf0"
+        st.markdown(
+            f'<div style="background:#13161d;border:1px solid #2a2f3d;border-radius:8px;padding:12px 16px;margin-bottom:8px;display:flex;align-items:flex-start;gap:16px">'
+            f'<div style="font-family:Syne,sans-serif;font-size:22px;font-weight:800;color:{rank_c};min-width:28px;line-height:1.2">#{i+1}</div>'
+            f'<div style="flex:1">'
+            f'<div style="font-size:13px;color:#e8eaf0;font-weight:600;margin-bottom:4px">{m["country"]}'
+            f'<span style="font-size:10px;color:{rank_c};background:#0a1700;border:1px solid {rank_c}40;'
+            f'padding:2px 8px;border-radius:8px;margin-left:10px">Priority {m["priority"]}</span></div>'
+            f'<div style="font-size:11px;color:#6b7280;line-height:1.6">{m["activation"]}</div></div></div>',
+            unsafe_allow_html=True,
+        )
+
+
 # ── Data transparency banner ─────────────────────────────────────────────────
 st.markdown("""
 <div style="background:#0d1117;border:1px solid #1a1e27;border-radius:8px;padding:7px 16px;margin-bottom:18px;display:flex;align-items:center;justify-content:center;gap:12px">
@@ -440,7 +1097,7 @@ selected = st.radio("Club", list(WSL_CLUBS.keys()), horizontal=True)
 st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
 # ── Page nav ──────────────────────────────────────────────────────────────────
-page_nav = st.radio("Page", ["📊 Dashboard", "🛡 Player Welfare"], horizontal=True, key="page_nav")
+page_nav = st.radio("Page", ["📊 Dashboard", "🛡 Player Welfare", "🤝 Sponsorship", "🏟 Matchday", "🌍 Fan Acquisition"], horizontal=True, key="page_nav")
 st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
 if page_nav == "🛡 Player Welfare":
@@ -467,6 +1124,16 @@ att_preds        = d["attendance_predictions"]
 churn_risks      = d["churn_risks"]
 player_influence = d["player_influence"]
 sponsor_exposure = d["sponsor_exposure"]
+
+if page_nav == "🤝 Sponsorship":
+    _render_sponsorship(selected, d)
+    st.stop()
+elif page_nav == "🏟 Matchday":
+    _render_matchday(selected, d)
+    st.stop()
+elif page_nav == "🌍 Fan Acquisition":
+    _render_fan_acquisition(selected, d)
+    st.stop()
 
 # ── Source legend ─────────────────────────────────────────────────────────────
 def pill(label, live):

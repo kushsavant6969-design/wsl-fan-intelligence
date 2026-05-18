@@ -369,124 +369,144 @@ def render_upload() -> None:
         st.error(f"Could not read CSV: {exc}")
         return
 
-    uploaded_cols = list(raw_df.columns)
+    uploaded_cols  = list(raw_df.columns)
     mapping_result = auto_map_columns(uploaded_cols)  # {field: (col, score, tier)}
-
-    st.markdown("---")
-    st.markdown(
-        '<h3 style="font-family:\'Syne\',sans-serif;color:#e5e7eb;font-size:18px">'
-        'Confirm Column Mapping</h3>'
-        '<p style="color:#6b7280;font-size:12px;margin-bottom:16px">'
-        'We auto-detected your columns. Review and confirm before proceeding.</p>',
-        unsafe_allow_html=True,
-    )
 
     auto_fields    = {f: v for f, v in mapping_result.items() if v[2] == "auto"}
     low_fields     = {f: v for f, v in mapping_result.items() if v[2] == "low"}
     unmatch_fields = {f: v for f, v in mapping_result.items() if v[2] == "unmatched"}
 
-    avail_opts = ["— Not Available —"] + uploaded_cols
-    confirmed_mapping: dict = {}
+    # Mappings we accept silently (auto-tier) — pre-populate confirmed_mapping
+    confirmed_mapping: dict = {f: v[0] for f, v in auto_fields.items()}
 
-    # ── Section 1: Auto Matched (green) ──
-    if auto_fields:
+    needs_human = bool(low_fields or unmatch_fields)
+    avail_opts  = ["— Not Available —"] + uploaded_cols
+
+    st.markdown("---")
+
+    # ── Case A: everything matched at high confidence — clean success screen ──
+    if not needs_human:
         st.markdown(
-            '<div style="background:#052e16;border:1px solid #166534;border-radius:8px;'
-            'padding:12px 18px;margin-bottom:10px">'
-            '<span style="color:#22c55e;font-size:11px;font-weight:600">'
-            f'&#10003; AUTO MATCHED</span>'
-            '<span style="color:#4b5563;font-size:10px;margin-left:10px">'
-            f'High confidence &mdash; {len(auto_fields)} field(s)</span></div>',
+            '<div style="background:#052e16;border:1px solid #166534;'
+            'border-radius:10px;padding:16px 20px;margin-bottom:20px">'
+            '<span style="color:#22c55e;font-size:14px;font-weight:700">'
+            '&#10003; All columns matched successfully.</span></div>',
             unsafe_allow_html=True,
         )
+
+        # Two-column matched field list
+        rows_html = ""
         for field, (col, score, _) in auto_fields.items():
-            c1, c2, c3 = st.columns([2, 2, 1])
-            with c1:
-                st.markdown(
-                    f'<div style="color:#22c55e;font-size:12px;padding:8px 0">'
-                    f'<strong>{field.replace("_", " ").title()}</strong></div>',
-                    unsafe_allow_html=True,
-                )
-            with c2:
-                idx = avail_opts.index(col) if col in avail_opts else 0
-                sel = st.selectbox(
-                    f"_auto_{field}", avail_opts, index=idx,
-                    label_visibility="collapsed", key=f"map_auto_{field}",
-                )
-            with c3:
-                st.markdown(
-                    f'<div style="color:#22c55e;font-size:11px;padding:8px 0">'
-                    f'{score:.0f}% match</div>',
-                    unsafe_allow_html=True,
-                )
-            confirmed_mapping[field] = sel if sel != "— Not Available —" else None
-
-    # ── Section 2: Low Confidence (amber) ──
-    if low_fields:
+            label = field.replace("_", " ").title()
+            rows_html += (
+                f'<div style="display:flex;justify-content:space-between;'
+                f'padding:8px 0;border-bottom:1px solid #1f2937">'
+                f'<span style="color:#9ca3af;font-size:12px">{label}</span>'
+                f'<span style="color:#22c55e;font-size:12px;font-weight:600">{col}</span>'
+                f'</div>'
+            )
         st.markdown(
-            '<div style="background:#1c1500;border:1px solid #92400e;border-radius:8px;'
-            'padding:12px 18px;margin-bottom:10px;margin-top:6px">'
-            '<span style="color:#f59e0b;font-size:11px;font-weight:600">'
-            '&#9888; LOW CONFIDENCE</span>'
-            '<span style="color:#4b5563;font-size:10px;margin-left:10px">'
-            f'Please confirm &mdash; {len(low_fields)} field(s)</span></div>',
+            f'<div style="background:#13161d;border:1px solid #2a2f3d;'
+            f'border-radius:10px;padding:16px 20px;margin-bottom:20px">{rows_html}</div>',
             unsafe_allow_html=True,
         )
-        for field, (col, score, _) in low_fields.items():
-            c1, c2, c3 = st.columns([2, 2, 1])
-            with c1:
-                st.markdown(
-                    f'<div style="color:#f59e0b;font-size:12px;padding:8px 0">'
-                    f'<strong>{field.replace("_", " ").title()}</strong></div>',
-                    unsafe_allow_html=True,
-                )
-            with c2:
-                idx = avail_opts.index(col) if col and col in avail_opts else 0
-                sel = st.selectbox(
-                    f"_low_{field}", avail_opts, index=idx,
-                    label_visibility="collapsed", key=f"map_low_{field}",
-                )
-            with c3:
-                st.markdown(
-                    f'<div style="color:#f59e0b;font-size:11px;padding:8px 0">'
-                    f'{score:.0f}% match</div>',
-                    unsafe_allow_html=True,
-                )
-            confirmed_mapping[field] = sel if sel != "— Not Available —" else None
 
-    # ── Section 3: Unmatched Core Fields (red) ──
-    if unmatch_fields:
+    # ── Case B: some fields need human attention — show only those dropdowns ──
+    else:
         st.markdown(
-            '<div style="background:#1f0a0a;border:1px solid #991b1b;border-radius:8px;'
-            'padding:12px 18px;margin-bottom:10px;margin-top:6px">'
-            '<span style="color:#ef4444;font-size:11px;font-weight:600">'
-            '&#10007; UNMATCHED CORE FIELDS</span>'
-            '<span style="color:#4b5563;font-size:10px;margin-left:10px">'
-            f'Assign manually or mark not available &mdash; {len(unmatch_fields)} field(s)</span></div>',
+            '<h3 style="font-family:\'Syne\',sans-serif;color:#e5e7eb;font-size:18px">'
+            'Confirm Column Mapping</h3>'
+            '<p style="color:#6b7280;font-size:12px;margin-bottom:16px">'
+            f'{len(auto_fields)} field(s) matched automatically. '
+            'Please resolve the fields below before proceeding.</p>',
             unsafe_allow_html=True,
         )
-        for field, _ in unmatch_fields.items():
-            c1, c2 = st.columns([2, 3])
-            with c1:
-                st.markdown(
-                    f'<div style="color:#ef4444;font-size:12px;padding:8px 0">'
-                    f'<strong>{field.replace("_", " ").title()}</strong></div>',
-                    unsafe_allow_html=True,
+
+        # Show auto-matched as a compact read-only summary (no dropdowns)
+        if auto_fields:
+            rows_html = ""
+            for field, (col, _, _t) in auto_fields.items():
+                label = field.replace("_", " ").title()
+                rows_html += (
+                    f'<div style="display:flex;justify-content:space-between;'
+                    f'padding:6px 0;border-bottom:1px solid #1f2937">'
+                    f'<span style="color:#6b7280;font-size:11px">{label}</span>'
+                    f'<span style="color:#22c55e;font-size:11px">{col} &#10003;</span>'
+                    f'</div>'
                 )
-            with c2:
-                sel = st.selectbox(
-                    f"_unmatched_{field}", avail_opts, index=0,
-                    label_visibility="collapsed", key=f"map_unmatched_{field}",
-                )
-            confirmed_mapping[field] = sel if sel != "— Not Available —" else None
+            st.markdown(
+                f'<div style="background:#13161d;border:1px solid #2a2f3d;'
+                f'border-radius:8px;padding:12px 16px;margin-bottom:16px">'
+                f'<span style="color:#22c55e;font-size:10px;font-weight:600;'
+                f'text-transform:uppercase;letter-spacing:.1em">Auto Matched</span>'
+                f'{rows_html}</div>',
+                unsafe_allow_html=True,
+            )
+
+        # Low confidence — dropdown per field only
+        if low_fields:
+            st.markdown(
+                '<div style="background:#1c1500;border:1px solid #92400e;'
+                'border-radius:8px;padding:12px 18px;margin-bottom:10px">'
+                '<span style="color:#f59e0b;font-size:11px;font-weight:600">'
+                f'&#9888; LOW CONFIDENCE &mdash; {len(low_fields)} field(s) need confirmation</span>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+            for field, (col, score, _) in low_fields.items():
+                c1, c2, c3 = st.columns([2, 2, 1])
+                with c1:
+                    st.markdown(
+                        f'<div style="color:#f59e0b;font-size:12px;padding:8px 0">'
+                        f'<strong>{field.replace("_", " ").title()}</strong></div>',
+                        unsafe_allow_html=True,
+                    )
+                with c2:
+                    idx = avail_opts.index(col) if col and col in avail_opts else 0
+                    sel = st.selectbox(
+                        f"_low_{field}", avail_opts, index=idx,
+                        label_visibility="collapsed", key=f"map_low_{field}",
+                    )
+                with c3:
+                    st.markdown(
+                        f'<div style="color:#f59e0b;font-size:11px;padding:8px 0">'
+                        f'{score:.0f}%</div>',
+                        unsafe_allow_html=True,
+                    )
+                confirmed_mapping[field] = sel if sel != "— Not Available —" else None
+
+        # Unmatched — dropdown per field only
+        if unmatch_fields:
+            st.markdown(
+                '<div style="background:#1f0a0a;border:1px solid #991b1b;'
+                'border-radius:8px;padding:12px 18px;margin-bottom:10px;margin-top:6px">'
+                '<span style="color:#ef4444;font-size:11px;font-weight:600">'
+                f'&#10007; UNMATCHED &mdash; {len(unmatch_fields)} field(s) — assign or mark not available</span>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+            for field, _ in unmatch_fields.items():
+                c1, c2 = st.columns([2, 3])
+                with c1:
+                    st.markdown(
+                        f'<div style="color:#ef4444;font-size:12px;padding:8px 0">'
+                        f'<strong>{field.replace("_", " ").title()}</strong></div>',
+                        unsafe_allow_html=True,
+                    )
+                with c2:
+                    sel = st.selectbox(
+                        f"_unmatched_{field}", avail_opts, index=0,
+                        label_visibility="collapsed", key=f"map_unmatched_{field}",
+                    )
+                confirmed_mapping[field] = sel if sel != "— Not Available —" else None
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    if st.button("✓ Confirm Mapping and Analyse Fans", key="confirm_mapping_btn"):
+    if st.button("✓ Confirm and Analyse Fans", key="confirm_mapping_btn",
+                 type="primary" if not needs_human else "secondary"):
         final_df = standardise_df(raw_df, confirmed_mapping)
-        st.session_state["fi_df"]               = final_df
-        st.session_state["fi_confirmed_mapping"] = confirmed_mapping
-        # Force navigation to Fan Dashboard on next render
+        st.session_state["fi_df"]                = final_df
+        st.session_state["fi_confirmed_mapping"]  = confirmed_mapping
         st.session_state["fi_nav"] = "📊 Fan Dashboard"
         st.rerun()
 

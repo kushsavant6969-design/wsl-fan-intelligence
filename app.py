@@ -5,7 +5,12 @@ import pandas as pd
 import os, sys, io, random, math
 from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(__file__))
-from data import get_full_club_data, get_claude_recommendation, WSL_CLUBS, WSL_LEAGUE_CONTEXT, PLAYER_DATA
+from data import get_full_club_data, get_claude_recommendation, WSL_CLUBS, WSL_LEAGUE_CONTEXT, PLAYER_DATA, compute_fan_risk_score
+from csv_processor import (
+    detect_columns, build_csv_data_dict, check_features, is_full_schema,
+    CANONICAL_COLUMNS, _pdf_safe,
+)
+import base64
 
 st.set_page_config(page_title="WSL Fan Intelligence",
     page_icon="⚽", layout="wide", initial_sidebar_state="collapsed")
@@ -676,7 +681,7 @@ _MATCHDAY_SEGMENTS = [
 
 def _gen_matchday_data(club_name: str, d: dict) -> dict:
     rng = random.Random(hash(club_name + "matchday2025") % (2**31))
-    capacity = WSL_CLUBS[club_name]["capacity"]
+    capacity = WSL_CLUBS.get(club_name, WSL_CLUBS["Arsenal W"])["capacity"]
     fixtures = d["tickets"]["fixtures"][:3]
 
     seg_splits = [0.35, 0.30, 0.28, 0.07]
@@ -1062,6 +1067,215 @@ def _render_fan_acquisition(club_name: str, d: dict) -> None:
         )
 
 
+# ── Badge helpers ─────────────────────────────────────────────────────────────
+def source_badge(from_data: bool) -> str:
+    if from_data:
+        return '<span style="background:#052e16;color:#22c55e;border:1px solid #166534;font-size:8px;padding:2px 7px;border-radius:8px;margin-left:6px">From your data</span>'
+    return '<span style="background:#1c1500;color:#f59e0b;border:1px solid #92400e;font-size:8px;padding:2px 7px;border-radius:8px;margin-left:6px">Modelled</span>'
+
+
+def feature_gate_placeholder(feature_name: str, needed_cols: list) -> None:
+    cols_str = ", ".join(needed_cols)
+    st.markdown(
+        f'<div style="background:#0d1117;border:1px dashed #2a2f3d;border-radius:10px;padding:22px 24px;margin-bottom:14px;text-align:center">'
+        f'<div style="font-size:22px;margin-bottom:8px">🔒</div>'
+        f'<div style="font-size:12px;color:#4b5563;margin-bottom:4px">{feature_name} — column not detected</div>'
+        f'<div style="font-size:10px;color:#374151">Upload a CSV containing <span style="color:#c8f135">{cols_str}</span> to unlock this module</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ── WSL Context Panel ─────────────────────────────────────────────────────────
+def render_wsl_context_panel() -> None:
+    st.markdown("<hr style='border-color:#1f2937;margin:16px 0 16px'>", unsafe_allow_html=True)
+    st.markdown(
+        '<div style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0;margin-bottom:12px">'
+        'WSL Fan Intelligence · context &amp; benchmarks'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    cols = st.columns(3)
+    panels = [
+        {
+            "icon": "📊",
+            "label": "Avidity Gap",
+            "stat":  "36% vs 61%",
+            "stat_color": "#f59e0b",
+            "body": (
+                "Women's football fan avidity sits at <strong style='color:#f59e0b'>36%</strong> "
+                "vs <strong style='color:#22c55e'>61%</strong> for men's. "
+                "Closing this gap is the single biggest commercial opportunity in British sport right now."
+            ),
+        },
+        {
+            "icon": "💰",
+            "label": "Revenue Concentration",
+            "stat":  "20% → 66%",
+            "stat_color": "#c8f135",
+            "body": (
+                "The top <strong style='color:#c8f135'>20%</strong> of WSL fans drive "
+                "<strong style='color:#c8f135'>two-thirds</strong> of total club revenue. "
+                "Identifying and protecting this cohort is the #1 commercial priority."
+            ),
+        },
+        {
+            "icon": "🎯",
+            "label": "Platform Mission",
+            "stat":  "Data → Decisions",
+            "stat_color": "#3d9cf0",
+            "body": (
+                "FanIntel connects fan behaviour data to commercial outcomes. "
+                "Every signal surfaces a recommended action — so clubs can act on insight, not instinct."
+            ),
+        },
+    ]
+    for i, p in enumerate(panels):
+        with cols[i]:
+            st.markdown(
+                f'<div style="background:#0d1117;border:1px solid #1a1e27;border-top:2px solid {p["stat_color"]};'
+                f'border-radius:8px;padding:16px 18px;height:100%">'
+                f'<div style="font-size:18px;margin-bottom:6px">{p["icon"]}</div>'
+                f'<div style="font-size:9px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">{p["label"]}</div>'
+                f'<div style="font-family:Syne,sans-serif;font-size:20px;font-weight:800;color:{p["stat_color"]};margin-bottom:8px">{p["stat"]}</div>'
+                f'<div style="font-size:11px;color:#6b7280;line-height:1.6">{p["body"]}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+
+# ── Upload Screen ─────────────────────────────────────────────────────────────
+def _get_sample_csv_b64() -> str:
+    """Return base64-encoded sample CSV for download button."""
+    import io, random as rnd
+    rng = rnd.Random(42)
+    players = ["Sam Kerr", "Vivianne Miedema", "Beth Mead", "Lauren Hemp",
+               "Rachel Daly", "Chloe Kelly", "Millie Bright", "Erin Cuthbert"]
+    channels = ["Email", "SMS", "App", "Social", "Post"]
+    memberships = ["Season Ticket", "Member", "General Admission", "Hospitality", "Lapsed"]
+    postcodes = ["M1", "M2", "M3", "N1", "N2", "SE1", "SW1", "E1", "W1", "EC1",
+                 "B1", "B2", "LS1", "LS2", "L1", "L2", "BS1", "CF1", "EH1"]
+    genders = ["Female", "Male", "Non-binary", "Prefer not to say"]
+
+    rows = []
+    for i in range(1, 201):
+        age = rng.randint(16, 72)
+        last_days_ago = rng.randint(0, 730)
+        last_dt = (datetime.now() - timedelta(days=last_days_ago)).strftime("%Y-%m-%d")
+        tkts = rng.randint(0, 18) if last_days_ago < 365 else rng.randint(0, 3)
+        spend = round(tkts * rng.uniform(12, 95) + rng.uniform(0, 120), 2)
+        eng = round(rng.uniform(0.05, 0.98), 2)
+        rows.append({
+            "Fan_ID":            f"WSL-{i:04d}",
+            "Age":               age,
+            "Gender":            rng.choice(genders),
+            "Last_Attended":     last_dt,
+            "Tickets_Purchased": tkts,
+            "Spend":             spend,
+            "Favourite_Player":  rng.choice(players),
+            "Engagement_Score":  eng,
+            "Channel_Preference":rng.choice(channels),
+            "Membership_Type":   rng.choice(memberships),
+            "Postcode_District": rng.choice(postcodes),
+        })
+    buf = io.StringIO()
+    pd.DataFrame(rows).to_csv(buf, index=False)
+    return base64.b64encode(buf.getvalue().encode()).decode()
+
+
+def render_upload_screen() -> None:
+    # ── WSL Context Panel always shown ──
+    render_wsl_context_panel()
+    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="background:#0d1117;border:1px solid #c8f13540;border-radius:12px;padding:28px 32px;margin-bottom:24px">
+        <div style="font-family:Syne,sans-serif;font-size:20px;font-weight:800;color:#c8f135;margin-bottom:8px">
+            📂 Upload your fan database
+        </div>
+        <div style="font-size:12px;color:#6b7280;line-height:1.7;max-width:640px">
+            FanIntel turns your fan data into commercial decisions.
+            Upload a CSV with any fan columns — we'll auto-detect what you have
+            and unlock the relevant intelligence modules. No template required.
+        </div>
+    </div>""", unsafe_allow_html=True)
+
+    up_col, dl_col = st.columns([3, 1])
+    with up_col:
+        uploaded = st.file_uploader(
+            "Drop your CSV here or click Browse",
+            type=["csv"],
+            key="csv_uploader_main",
+            label_visibility="collapsed",
+        )
+    with dl_col:
+        csv_b64 = _get_sample_csv_b64()
+        st.markdown(
+            f'<a href="data:text/csv;base64,{csv_b64}" download="wsl_sample_fans.csv" '
+            f'style="display:block;text-align:center;background:#13161d;border:1px solid #2a2f3d;'
+            f'color:#9ca3af;font-size:11px;padding:10px 14px;border-radius:6px;text-decoration:none;margin-top:4px">'
+            f'⬇ Sample CSV (200 fans)</a>',
+            unsafe_allow_html=True,
+        )
+
+    if uploaded is not None:
+        try:
+            df = pd.read_csv(uploaded)
+            col_map = detect_columns(df)
+            st.session_state["csv_df"] = df
+            st.session_state["csv_col_map"] = col_map
+            st.rerun()
+        except Exception as e:
+            st.error(f"Could not read CSV: {e}")
+        return
+
+    # ── Recommended Columns table ──────────────────────────────────────────────
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+    st.markdown(
+        '<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">'
+        'Recommended columns — what each column unlocks</div>',
+        unsafe_allow_html=True,
+    )
+
+    col_info = [
+        ("Fan_ID",            "Required base for all features",               True),
+        ("Age",               "Fan Cohort Breakdown",                         True),
+        ("Last_Attended",     "Churn Risk Score + Attendance Prediction",      True),
+        ("Tickets_Purchased", "Ticket Demand Index + Fan Risk Score",          True),
+        ("Engagement_Score",  "Cross-channel Sentiment Score",                 True),
+        ("Spend",             "Commercial Impact Summary + Sponsor Exposure",  False),
+        ("Favourite_Player",  "Player Sentiment Intelligence (gated module)",  False),
+        ("Channel_Preference","Actionable Campaign Recommendations",           False),
+        ("Membership_Type",   "Loyalty Segmentation",                         False),
+        ("Postcode_District", "Geographic Fan Analysis",                       False),
+        ("Gender",            "Demographic Breakdown",                        False),
+    ]
+
+    hdr = (
+        '<div style="display:grid;grid-template-columns:1.4fr 2.5fr 90px;gap:8px;'
+        'padding:6px 14px;background:#0a0c10;border-radius:5px 5px 0 0;margin-bottom:2px">'
+        + "".join(f'<div style="font-size:9px;color:#4b5563;text-transform:uppercase;letter-spacing:.08em">{h}</div>'
+                  for h in ["Column", "What it unlocks", "Core"])
+        + "</div>"
+    )
+    rows_html = ""
+    for col_name, unlocks, is_core in col_info:
+        core_badge = (
+            '<span style="background:#052e16;color:#22c55e;border:1px solid #22c55e;font-size:8px;padding:2px 6px;border-radius:8px">Core</span>'
+            if is_core else
+            '<span style="background:#0a1020;color:#6b7280;border:1px solid #2a2f3d;font-size:8px;padding:2px 6px;border-radius:8px">Optional</span>'
+        )
+        rows_html += (
+            f'<div style="display:grid;grid-template-columns:1.4fr 2.5fr 90px;gap:8px;'
+            f'padding:7px 14px;border-bottom:1px solid #1a1e27;align-items:center">'
+            f'<div style="font-family:DM Mono,monospace;font-size:11px;color:#c8f135">{col_name}</div>'
+            f'<div style="font-size:11px;color:#6b7280">{unlocks}</div>'
+            f'<div>{core_badge}</div>'
+            f'</div>'
+        )
+    st.markdown(card(hdr + rows_html, padding="0", bg="#13161d"), unsafe_allow_html=True)
+
+
 # ── Data transparency banner ─────────────────────────────────────────────────
 st.markdown("""
 <div style="background:#0d1117;border:1px solid #1a1e27;border-radius:8px;padding:7px 16px;margin-bottom:18px;display:flex;align-items:center;justify-content:center;gap:12px">
@@ -1092,21 +1306,59 @@ with c2:
 
 st.markdown("<hr style='border-color:#1f2937;margin:14px 0 12px'>", unsafe_allow_html=True)
 
-# ── Club tabs ─────────────────────────────────────────────────────────────────
-selected = st.radio("Club", list(WSL_CLUBS.keys()), horizontal=True)
-st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+# ── Session state: CSV upload ─────────────────────────────────────────────────
+if "csv_df" not in st.session_state:
+    st.session_state["csv_df"] = None
+if "csv_col_map" not in st.session_state:
+    st.session_state["csv_col_map"] = {}
+
+# ── Show upload screen if no CSV loaded yet ───────────────────────────────────
+if st.session_state["csv_df"] is None:
+    render_upload_screen()
+    st.stop()
+
+# ── CSV is loaded — show detected columns summary + reset option ──────────────
+df       = st.session_state["csv_df"]
+col_map  = st.session_state["csv_col_map"]
+features = check_features(col_map)
+
+detected_count = len(col_map)
+_det_color = "#22c55e" if detected_count >= 7 else "#f59e0b" if detected_count >= 4 else "#ef4444"
+_det_col, _reset_col = st.columns([8, 1])
+with _det_col:
+    det_pills = "".join(
+        f'<span style="background:#052e16;color:#22c55e;border:1px solid #22c55e30;font-size:9px;'
+        f'padding:2px 8px;border-radius:8px;margin-right:4px">{c}</span>'
+        for c in col_map.keys()
+    )
+    st.markdown(
+        f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:2px">'
+        f'<span style="font-size:10px;color:{_det_color}">● {detected_count} columns detected</span>'
+        f'{det_pills}</div>',
+        unsafe_allow_html=True,
+    )
+with _reset_col:
+    if st.button("↩ Reset CSV", key="reset_csv"):
+        st.session_state["csv_df"] = None
+        st.session_state["csv_col_map"] = {}
+        st.rerun()
+
+st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
 # ── Page nav ──────────────────────────────────────────────────────────────────
 page_nav = st.radio("Page", ["📊 Dashboard", "🛡 Player Welfare", "🤝 Sponsorship", "🏟 Matchday", "🌍 Fan Acquisition"], horizontal=True, key="page_nav")
 st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
+# ── Use "Arsenal W" as demo context for club-specific pages ───────────────────
+selected = "Arsenal W"  # fallback club for pages that need WSL_CLUBS lookups
+
 if page_nav == "🛡 Player Welfare":
     _render_player_welfare(selected)
     st.stop()
 
-# ── Load ──────────────────────────────────────────────────────────────────────
-with st.spinner(f"Pulling fan intelligence for {selected}..."):
-    d = get_full_club_data(selected)
+# ── Load — CSV-driven ──────────────────────────────────────────────────────────
+with st.spinner("Building fan intelligence from your data..."):
+    d = build_csv_data_dict(df, col_map)
 
 kpis             = d["kpis"]
 sent             = d["sentiment"]
@@ -1136,17 +1388,21 @@ elif page_nav == "🌍 Fan Acquisition":
     st.stop()
 
 # ── Source legend ─────────────────────────────────────────────────────────────
-def pill(label, live):
-    if live:
+def pill(label, source_type):
+    if source_type == "live":
         return f'<span style="background:#052e16;color:#22c55e;border:1px solid #166534;font-size:9px;padding:2px 8px;border-radius:10px;margin-right:5px">⬤ Live · {label}</span>'
-    return f'<span style="background:#1c1500;color:#f59e0b;border:1px solid #92400e;font-size:9px;padding:2px 8px;border-radius:10px;margin-right:5px">◯ Sim · {label}</span>'
+    if source_type == "csv":
+        return f'<span style="background:#0a1020;color:#3d9cf0;border:1px solid #1e3a5f;font-size:9px;padding:2px 8px;border-radius:10px;margin-right:5px">● Your data · {label}</span>'
+    return f'<span style="background:#1c1500;color:#f59e0b;border:1px solid #92400e;font-size:9px;padding:2px 8px;border-radius:10px;margin-right:5px">◯ Modelled · {label}</span>'
 
+_sent_src = sources["sentiment"]  # "csv", "live", or "simulated"
+_cont_src = sources["content"]
 st.markdown(
     '<span style="font-size:10px;color:#4b5563;margin-right:6px">Sources:</span>'
-    + pill("YouTube", sources["content"]=="live")
-    + pill("Reddit sentiment", sources["sentiment"]=="live")
-    + pill("X / TikTok", False)
-    + pill("Ticketing", False),
+    + pill("Engagement", _sent_src)
+    + pill("Tickets", "csv" if "Tickets_Purchased" in col_map else "modelled")
+    + pill("Player data", "csv" if "Favourite_Player" in col_map else "modelled")
+    + pill("Predictions", "modelled"),
     unsafe_allow_html=True)
 st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
 
@@ -1155,34 +1411,35 @@ if "guide_dismissed" not in st.session_state:
     st.session_state["guide_dismissed"] = False
 
 if not st.session_state["guide_dismissed"]:
-    st.markdown("""
+    total_fans_str = f"{len(df):,}"
+    st.markdown(f"""
     <div style="background:#0d1117;border:1px solid #c8f13540;border-radius:10px;padding:20px 24px;margin-bottom:4px">
         <div style="font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:#c8f135;margin-bottom:14px;letter-spacing:-.3px">
-            ✦ How to use FanIntel WSL
+            ✦ Your fan data is loaded — {total_fans_str} fans · {len(col_map)} columns detected
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px">
             <div>
-                <div style="font-size:9px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">What is FanIntel?</div>
+                <div style="font-size:9px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">How it works</div>
                 <div style="font-size:11px;color:#6b7280;line-height:1.7">
-                    A real-time fan intelligence platform for WSL clubs. It aggregates signals
-                    across sentiment, ticketing, content and commercial data to surface actionable
-                    insights for club executives and commercial teams.
+                    FanIntel auto-detected your column names and built the dashboard from your data.
+                    Sections marked <span style="color:#22c55e">From your data</span> use your real numbers.
+                    Sections marked <span style="color:#f59e0b">Modelled</span> are computed estimates.
                 </div>
             </div>
             <div>
-                <div style="font-size:9px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Club selector</div>
+                <div style="font-size:9px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Feature gating</div>
                 <div style="font-size:11px;color:#6b7280;line-height:1.7">
-                    Use the tab selector above to switch between WSL clubs — the dashboard refreshes
-                    instantly. The Commercial Impact Summary at the top gives the executive view.
-                    Scroll down for deeper data layers including attendance predictions and churn risk.
+                    Modules unlock based on which columns were detected. Player Intelligence requires
+                    <span style="color:#c8f135">Favourite_Player</span>. Churn Risk requires
+                    <span style="color:#c8f135">Last_Attended</span>. Scroll down to see what's active.
                 </div>
             </div>
             <div>
                 <div style="font-size:9px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Key metric scales</div>
                 <div style="font-size:11px;color:#6b7280;line-height:1.8">
                     <span style="color:#9ca3af">FanIntel Score</span> — 0 to 100 &nbsp;·&nbsp; 70+ = healthy<br>
-                    <span style="color:#9ca3af">Sentiment Score</span> — 0 to 100 &nbsp;·&nbsp; &gt;65 = above league avg<br>
-                    <span style="color:#9ca3af">Ticket Demand</span> — 0 to 1 &nbsp;·&nbsp; 1.0 = sold out<br>
+                    <span style="color:#9ca3af">Engagement Score</span> — 0 to 100 &nbsp;·&nbsp; &gt;65 = strong<br>
+                    <span style="color:#9ca3af">Ticket Demand</span> — 0 to 1 &nbsp;·&nbsp; 1.0 = all fans bought<br>
                     <span style="color:#9ca3af">Fan Risk Score</span> — 0 to 100 &nbsp;·&nbsp; lower is better
                 </div>
             </div>
@@ -1349,10 +1606,15 @@ with k4: st.markdown(kpi_html("Fan Risk Score", f"{kpis['overall_risk']}/100",
     risk_color, risk_color,
     sub_delta="0 – 100 &nbsp;·&nbsp; lower is better"), unsafe_allow_html=True)
 with k5:
-    pos = league.get("position","—")
-    pts = league.get("pts","—")
-    st.markdown(kpi_html("League Position", f"#{pos}",
-        f"— {pts} pts · {' '.join(form)}", "#e8eaf0", "#6b7280"), unsafe_allow_html=True)
+    _total_fans = d.get("total_fans", len(df))
+    _avg_spend  = ""
+    if "Spend" in col_map:
+        _sp = pd.to_numeric(df[col_map["Spend"]], errors="coerce")
+        _avg_spend = f"£{_sp.mean():.0f} avg spend"
+    st.markdown(kpi_html("Fan Database", f"{_total_fans:,}",
+        _avg_spend if _avg_spend else f"Detected: {len(col_map)} columns",
+        "#e8eaf0", "#6b7280",
+        sub_delta="Total fans in uploaded CSV"), unsafe_allow_html=True)
 
 st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
@@ -1440,6 +1702,7 @@ with s1:
     for sig in signals:
         bc = priority_border.get(sig["priority"],"#2a2f3d")
         bg = priority_bg.get(sig["priority"],"#13161d")
+        _sig_src_badge = source_badge(sig.get("source","") == "From your data")
 
         # Claude AI recommendation for HIGH signals
         ai_block = ""
@@ -1461,7 +1724,7 @@ with s1:
         st.markdown(f"""
         <div style="background:{bg};border:1px solid #1f2937;border-left:3px solid {bc};border-radius:8px;padding:12px 14px;margin-bottom:10px">
             <div style="font-size:12px;color:#e8eaf0;font-weight:500;margin-bottom:4px">
-                {risk_badge(sig['priority'])}{sig['title']}
+                {risk_badge(sig['priority'])}{sig['title']}{_sig_src_badge}
             </div>
             <div style="font-size:11px;color:#6b7280;line-height:1.5;margin-bottom:6px">{sig['desc']}</div>
             <div style="font-size:10px;color:#3d9cf0">→ {sig.get('action','Review data')}</div>
@@ -1470,6 +1733,14 @@ with s1:
 
 with s2:
     st.markdown('<div style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0;margin-bottom:10px">Top content · YouTube</div>', unsafe_allow_html=True)
+    if not content["top_videos"]:
+        st.markdown(
+            '<div style="background:#0d1117;border:1px dashed #2a2f3d;border-radius:8px;padding:18px;text-align:center;margin-bottom:8px">'
+            '<div style="font-size:11px;color:#4b5563">No YouTube data in CSV mode</div>'
+            '<div style="font-size:10px;color:#374151;margin-top:4px">Content engagement is derived from your Engagement_Score column</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
     for v in content["top_videos"][:4]:
         views = v["views"]
         vfmt = f"{views/1_000_000:.1f}M" if views>=1_000_000 else f"{views//1000}K" if views>=1000 else str(views)
@@ -1517,40 +1788,70 @@ st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
 # ── Fan Cohort Breakdown ──────────────────────────────────────────────────────
 st.markdown("<hr style='border-color:#1f2937;margin:8px 0 14px'>", unsafe_allow_html=True)
-st.markdown('<div style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0;margin-bottom:12px">Fan cohort breakdown · at-risk segments</div>', unsafe_allow_html=True)
+_cohort_from_data = features.get("fan_cohorts", False)
+st.markdown(
+    f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'
+    f'<span style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0">Fan cohort breakdown · at-risk segments</span>'
+    f'{source_badge(_cohort_from_data)}'
+    f'</div>',
+    unsafe_allow_html=True,
+)
 
-cohort_cols = st.columns(len(cohorts))
-for i, cohort in enumerate(cohorts):
-    r = cohort["risk_score"]
-    risk_c = "#ef4444" if r >= 65 else "#f59e0b" if r >= 40 else "#22c55e"
-    risk_bg = "#1f0a0a" if r >= 65 else "#1c1500" if r >= 40 else "#0a1f0a"
-    risk_label = "HIGH RISK" if r >= 65 else "MED RISK" if r >= 40 else "LOW RISK"
-    eng = cohort["engagement"]
-    with cohort_cols[i]:
-        st.markdown(f"""
-        <div style="background:#13161d;border:1px solid #1f2937;border-top:3px solid {risk_c};border-radius:8px;padding:14px 12px;height:100%">
-            <div style="font-size:11px;color:#e8eaf0;font-weight:500;margin-bottom:8px">{cohort['name']}</div>
-            <div style="font-family:Syne,sans-serif;font-size:26px;font-weight:800;color:{risk_c};line-height:1">{r}</div>
-            <div style="font-size:9px;color:{risk_c};margin-bottom:2px;letter-spacing:.05em">{risk_label}</div>
-            <div style="font-size:9px;color:#374151;margin-bottom:8px">risk score · 0 – 100</div>
-            <div style="background:#0a0c10;border-radius:3px;height:4px;margin-bottom:8px;overflow:hidden">
-                <div style="width:{r}%;height:100%;background:{risk_c};border-radius:3px"></div>
-            </div>
-            <div style="font-size:9px;color:#6b7280;margin-bottom:4px">{cohort['size_pct']}% of fanbase</div>
-            <div style="font-size:9px;color:#4b5563;margin-bottom:8px">Engagement: {eng}%</div>
-            <div style="font-size:9px;color:#3d9cf0;line-height:1.4">→ {cohort['action']}</div>
-        </div>""", unsafe_allow_html=True)
+if not cohorts:
+    feature_gate_placeholder("Fan Cohort Breakdown", ["Age"])
+else:
+    cohort_cols = st.columns(len(cohorts))
+    for i, cohort in enumerate(cohorts):
+        r = cohort["risk_score"]
+        risk_c = "#ef4444" if r >= 65 else "#f59e0b" if r >= 40 else "#22c55e"
+        risk_label = "HIGH RISK" if r >= 65 else "MED RISK" if r >= 40 else "LOW RISK"
+        eng = cohort["engagement"]
+        # Actionable recommendation with channel/timing/trigger if available
+        if cohort.get("channel"):
+            channel_html = (
+                f'<div style="background:#0a1020;border:1px solid #1e3a5f;border-radius:5px;padding:7px 9px;margin-top:8px">'
+                f'<div style="font-size:8px;color:#3d9cf0;letter-spacing:.06em;margin-bottom:4px">RECOMMENDED ACTION</div>'
+                f'<div style="font-size:9px;color:#6b7280;line-height:1.5"><span style="color:#9ca3af">Channel:</span> {cohort["channel"]}</div>'
+                f'<div style="font-size:9px;color:#6b7280;line-height:1.5"><span style="color:#9ca3af">Timing:</span> {cohort["timing"]}</div>'
+                f'<div style="font-size:9px;color:#6b7280;line-height:1.5"><span style="color:#9ca3af">Trigger:</span> {cohort["trigger"]}</div>'
+                + (f'<div style="font-size:9px;color:#c8f135;line-height:1.5;margin-top:3px">Offer: {cohort["offer"]}</div>' if cohort.get("offer") else "")
+                + '</div>'
+            )
+        else:
+            channel_html = f'<div style="font-size:9px;color:#3d9cf0;line-height:1.4;margin-top:8px">→ {cohort["action"]}</div>'
+
+        data_badge = source_badge(cohort.get("source") == "from_data")
+        with cohort_cols[i]:
+            st.markdown(f"""
+            <div style="background:#13161d;border:1px solid #1f2937;border-top:3px solid {risk_c};border-radius:8px;padding:14px 12px;height:100%">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                    <div style="font-size:11px;color:#e8eaf0;font-weight:500">{cohort['name']}</div>
+                    {data_badge}
+                </div>
+                <div style="font-family:Syne,sans-serif;font-size:26px;font-weight:800;color:{risk_c};line-height:1">{r}</div>
+                <div style="font-size:9px;color:{risk_c};margin-bottom:2px;letter-spacing:.05em">{risk_label}</div>
+                <div style="font-size:9px;color:#374151;margin-bottom:8px">risk score · 0 – 100</div>
+                <div style="background:#0a0c10;border-radius:3px;height:4px;margin-bottom:8px;overflow:hidden">
+                    <div style="width:{r}%;height:100%;background:{risk_c};border-radius:3px"></div>
+                </div>
+                <div style="font-size:9px;color:#6b7280;margin-bottom:4px">{cohort['size_pct']}% of fanbase{' · ' + str(cohort.get('count','')) + ' fans' if cohort.get('count') else ''}</div>
+                <div style="font-size:9px;color:#4b5563;margin-bottom:0">Engagement: {eng}%</div>
+                {channel_html}
+            </div>""", unsafe_allow_html=True)
+
+# ── WSL Context Panel ─────────────────────────────────────────────────────────
+render_wsl_context_panel()
 
 # ── League context strip ──────────────────────────────────────────────────────
 st.markdown("<hr style='border-color:#1f2937;margin:16px 0 16px'>", unsafe_allow_html=True)
-st.markdown('<div style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0;margin-bottom:10px">WSL standings context</div>', unsafe_allow_html=True)
+st.markdown('<div style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0;margin-bottom:10px">WSL standings context · 2024–25</div>', unsafe_allow_html=True)
 
 league_clubs = {k: v for k, v in WSL_LEAGUE_CONTEXT.items()}
 lc = st.columns(len(league_clubs))
 for i, (club, data) in enumerate(league_clubs.items()):
-    is_selected = club == selected
-    bg = "#1a2010" if is_selected else "#13161d"
-    border = "#c8f135" if is_selected else "#1f2937"
+    is_selected = False  # No club selected in CSV mode
+    bg = "#13161d"
+    border = "#1f2937"
     form_str = " ".join(data["last_5_form"])
     with lc[i]:
         st.markdown(f"""
@@ -1563,11 +1864,14 @@ for i, (club, data) in enumerate(league_clubs.items()):
 
 # ── Feature 1: Attendance Prediction Engine ───────────────────────────────────
 st.markdown("<hr style='border-color:#1f2937;margin:16px 0 16px'>", unsafe_allow_html=True)
-st.markdown("""
-<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-    <span style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0">Attendance Prediction Engine · per fixture</span>
-    <span style="background:#1c1500;color:#f59e0b;border:1px solid #92400e;font-size:9px;padding:2px 8px;border-radius:10px">◯ Simulated model</span>
-</div>""", unsafe_allow_html=True)
+_att_from_data = features.get("attendance_prediction", False)
+st.markdown(
+    f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'
+    f'<span style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0">Attendance Prediction Engine · per fixture</span>'
+    f'{source_badge(_att_from_data)}'
+    f'</div>',
+    unsafe_allow_html=True,
+)
 
 if att_preds:
     att_cols = st.columns(len(att_preds))
@@ -1605,43 +1909,59 @@ else:
 
 # ── Feature 2: Fan Churn Risk Score ───────────────────────────────────────────
 st.markdown("<hr style='border-color:#1f2937;margin:20px 0 16px'>", unsafe_allow_html=True)
-st.markdown("""
-<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-    <span style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0">Fan Churn Risk Score · per cohort</span>
-    <span style="background:#1c1500;color:#f59e0b;border:1px solid #92400e;font-size:9px;padding:2px 8px;border-radius:10px">◯ Simulated model</span>
-</div>""", unsafe_allow_html=True)
+_churn_from_data = features.get("churn_risk", False)
+st.markdown(
+    f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'
+    f'<span style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0">Fan Churn Risk Score · per cohort</span>'
+    f'{source_badge(_churn_from_data)}'
+    f'</div>',
+    unsafe_allow_html=True,
+)
 
-churn_cols = st.columns(len(churn_risks))
-for i, cr in enumerate(churn_risks):
-    churn = cr["churn_pct"]
-    rl    = cr["risk_level"]
-    rc    = "#ef4444" if rl=="HIGH" else "#f59e0b" if rl=="MED" else "#22c55e"
-    rb    = "#1f0a0a" if rl=="HIGH" else "#1c1500" if rl=="MED" else "#0a1f0a"
-    with churn_cols[i]:
-        st.markdown(f"""
-        <div style="background:#13161d;border:1px solid #1f2937;border-top:3px solid {rc};border-radius:8px;padding:14px 12px;height:100%">
-            <div style="font-size:11px;color:#e8eaf0;font-weight:500;margin-bottom:8px">{cr['name']}</div>
-            <div style="font-family:Syne,sans-serif;font-size:28px;font-weight:800;color:{rc};line-height:1">{churn}%</div>
-            <div style="font-size:9px;color:{rc};margin-bottom:2px;letter-spacing:.05em">CHURN RISK</div>
-            <div style="font-size:9px;color:#374151;margin-bottom:8px">% of cohort at risk of lapsing</div>
-            <div style="background:#0a0c10;border-radius:3px;height:4px;margin-bottom:10px;overflow:hidden">
-                <div style="width:{churn}%;height:100%;background:{rc};border-radius:3px"></div>
-            </div>
-            <div style="background:{rb};border:1px solid {rc}22;border-radius:5px;padding:6px 8px">
-                <div style="font-size:8px;color:{rc};letter-spacing:.05em;margin-bottom:3px">RETENTION ACTION</div>
-                <div style="font-size:9px;color:#9ca3af;line-height:1.5">→ {cr['retention_action']}</div>
-            </div>
-        </div>""", unsafe_allow_html=True)
+if not churn_risks:
+    feature_gate_placeholder("Fan Churn Risk Score", ["Last_Attended"])
+else:
+    churn_cols = st.columns(len(churn_risks))
+    for i, cr in enumerate(churn_risks):
+        churn = cr["churn_pct"]
+        rl    = cr["risk_level"]
+        rc    = "#ef4444" if rl=="HIGH" else "#f59e0b" if rl=="MED" else "#22c55e"
+        rb    = "#1f0a0a" if rl=="HIGH" else "#1c1500" if rl=="MED" else "#0a1f0a"
+        _cr_badge = source_badge(cr.get("source") == "from_data")
+        with churn_cols[i]:
+            st.markdown(f"""
+            <div style="background:#13161d;border:1px solid #1f2937;border-top:3px solid {rc};border-radius:8px;padding:14px 12px;height:100%">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                    <div style="font-size:11px;color:#e8eaf0;font-weight:500">{cr['name']}</div>
+                    {_cr_badge}
+                </div>
+                <div style="font-family:Syne,sans-serif;font-size:28px;font-weight:800;color:{rc};line-height:1">{churn}%</div>
+                <div style="font-size:9px;color:{rc};margin-bottom:2px;letter-spacing:.05em">CHURN RISK</div>
+                <div style="font-size:9px;color:#374151;margin-bottom:8px">% of cohort at risk of lapsing</div>
+                <div style="background:#0a0c10;border-radius:3px;height:4px;margin-bottom:10px;overflow:hidden">
+                    <div style="width:{churn}%;height:100%;background:{rc};border-radius:3px"></div>
+                </div>
+                <div style="background:{rb};border:1px solid {rc}22;border-radius:5px;padding:6px 8px">
+                    <div style="font-size:8px;color:{rc};letter-spacing:.05em;margin-bottom:3px">RETENTION ACTION</div>
+                    <div style="font-size:9px;color:#9ca3af;line-height:1.5">→ {cr['retention_action']}</div>
+                </div>
+            </div>""", unsafe_allow_html=True)
 
 # ── Feature 3: Player Sentiment Influence ─────────────────────────────────────
 st.markdown("<hr style='border-color:#1f2937;margin:20px 0 16px'>", unsafe_allow_html=True)
-st.markdown("""
-<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-    <span style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0">Player Sentiment Influence · ranked by marketing value</span>
-    <span style="background:#1c1500;color:#f59e0b;border:1px solid #92400e;font-size:9px;padding:2px 8px;border-radius:10px">◯ Simulated data</span>
-</div>""", unsafe_allow_html=True)
+_player_src = "from_data" if features.get("player_intelligence") else "modelled"
+_player_badge_html = source_badge(_player_src == "from_data")
+st.markdown(
+    f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'
+    f'<span style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0">Player Sentiment Intelligence · ranked by marketing value</span>'
+    f'{_player_badge_html}'
+    f'</div>',
+    unsafe_allow_html=True,
+)
 
-if player_influence:
+if not features.get("player_intelligence"):
+    feature_gate_placeholder("Player Sentiment Intelligence", ["Favourite_Player"])
+elif player_influence:
     top_player = player_influence[0]
     p1c, p2c = st.columns([1.1, 2])
 
@@ -1710,15 +2030,18 @@ if player_influence:
                 <div style="text-align:center;font-family:Syne,sans-serif;font-size:13px;font-weight:700;color:#f59e0b">{p['marketing_value']}</div>
             </div>""", unsafe_allow_html=True)
 else:
-    st.markdown('<div style="color:#4b5563;font-size:11px">No player data available.</div>', unsafe_allow_html=True)
+    if features.get("player_intelligence"):
+        st.markdown('<div style="color:#4b5563;font-size:11px">No player data computed.</div>', unsafe_allow_html=True)
 
 # ── Feature 4: Sponsor Exposure Score ─────────────────────────────────────────
 st.markdown("<hr style='border-color:#1f2937;margin:20px 0 16px'>", unsafe_allow_html=True)
-st.markdown("""
-<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-    <span style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0">Sponsor Exposure Score · per fixture</span>
-    <span style="background:#1c1500;color:#f59e0b;border:1px solid #92400e;font-size:9px;padding:2px 8px;border-radius:10px">◯ Simulated model</span>
-</div>""", unsafe_allow_html=True)
+st.markdown(
+    f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'
+    f'<span style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0">Sponsor Exposure Score · per fixture</span>'
+    f'{source_badge(False)}'
+    f'</div>',
+    unsafe_allow_html=True,
+)
 
 sp_fixtures = sponsor_exposure["fixtures"]
 league_avg  = sponsor_exposure["league_avg"]
@@ -1762,8 +2085,12 @@ if sp_fixtures:
             st.markdown(sp_card, unsafe_allow_html=True)
 
 # ── Footer ────────────────────────────────────────────────────────────────────
-st.markdown("""
-<div style="font-size:10px;color:#374151;text-align:center;padding:20px 0 8px;border-top:1px solid #1f2937;margin-top:16px">
-    FanIntel WSL · May 2025 ·
-    Live: YouTube + Reddit · Simulated: X, TikTok, Ticketing · Not production data
-</div>""", unsafe_allow_html=True)
+_fan_count_footer = d.get("total_fans", len(df))
+st.markdown(
+    f'<div style="font-size:10px;color:#374151;text-align:center;padding:20px 0 8px;border-top:1px solid #1f2937;margin-top:16px">'
+    f'FanIntel WSL · {datetime.now().strftime("%B %Y")} · '
+    f'Driven by your data ({_fan_count_footer:,} fans · {len(col_map)} columns) · '
+    f'Attendance &amp; sponsor predictions are modelled estimates · Not for redistribution'
+    f'</div>',
+    unsafe_allow_html=True,
+)

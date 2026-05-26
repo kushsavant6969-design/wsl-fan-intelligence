@@ -1184,10 +1184,6 @@ def _get_sample_csv_b64() -> str:
 
 
 def render_upload_screen() -> None:
-    # ── WSL Context Panel always shown ──
-    render_wsl_context_panel()
-    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
-
     st.markdown("""
     <div style="background:#0d1117;border:1px solid #c8f13540;border-radius:12px;padding:28px 32px;margin-bottom:24px">
         <div style="font-family:Syne,sans-serif;font-size:20px;font-weight:800;color:#c8f135;margin-bottom:8px">

@@ -607,9 +607,12 @@ def build_csv_data_dict(df: pd.DataFrame, col_map: dict) -> dict:
     # Fan risk via existing engine
     form = ["W", "D", "W", "L", "W"]
     fixtures_for_risk = [
-        {"att_pct": round(kpis["demand_index"] * 100), "is_rival": False, "days_away":  7},
-        {"att_pct": round(kpis["demand_index"] *  95), "is_rival": False, "days_away": 14},
-        {"att_pct": min(100, round(kpis["demand_index"] * 120)), "is_rival": True, "days_away": 21},
+        {"opponent": "Next Home Fixture",  "date": "TBC", "home": True,  "is_rival": False,
+         "att_pct": round(kpis["demand_index"] * 100), "days_away":  7},
+        {"opponent": "Away Fixture",        "date": "TBC", "home": False, "is_rival": False,
+         "att_pct": round(kpis["demand_index"] *  95), "days_away": 14},
+        {"opponent": "Derby / Big Fixture", "date": "TBC", "home": True,  "is_rival": True,
+         "att_pct": min(100, round(kpis["demand_index"] * 120)), "days_away": 21},
     ]
     risk_data = compute_fan_risk_score("CSV Upload", kpis["sentiment_score"], fixtures_for_risk, form)
     kpis["overall_risk"] = risk_data["overall_risk"]

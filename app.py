@@ -295,105 +295,40 @@ def _render_player_welfare(club_name: str):
     )
     st.plotly_chart(fig_tl, use_container_width=True, key="welfare_timeline")
 
-    # ── Row 2: Category breakdown + Abusive accounts ───────────────────────────
-    ca1, ca2 = st.columns([2, 3])
+    # ── Abusive accounts ──────────────────────────────────────────────────────
+    st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Abusive Account Tracker</div>', unsafe_allow_html=True)
+    acc_df = (
+        df.groupby("account")
+        .agg(posts=("text", "count"), avg_toxicity=("toxicity_score", "mean"), top_category=("category", lambda x: x.mode()[0]))
+        .sort_values("posts", ascending=False)
+        .head(8)
+        .reset_index()
+    )
+    acc_df["avg_toxicity"] = acc_df["avg_toxicity"].round(1)
 
-    with ca1:
-        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Abuse Category Breakdown</div>', unsafe_allow_html=True)
-        cat_counts = df["category"].value_counts()
-        cat_colors = {"Threat": "#ef4444", "Slur": "#a855f7", "Identity Attack": "#f59e0b", "Abuse": "#3d9cf0"}
-        fig_cat = go.Figure(go.Bar(
-            x=cat_counts.index,
-            y=cat_counts.values,
-            marker_color=[cat_colors.get(c, "#6b7280") for c in cat_counts.index],
-            marker_line_width=0,
-        ))
-        fig_cat.update_layout(
-            paper_bgcolor="#13161d", plot_bgcolor="#13161d",
-            margin=dict(l=0, r=10, t=10, b=10),
-            height=240,
-            xaxis=dict(showgrid=False, tickfont=dict(size=10, color="#6b7280")),
-            yaxis=dict(showgrid=False, tickfont=dict(size=10, color="#6b7280")),
-            font=dict(family="DM Mono, monospace"),
-        )
-        st.plotly_chart(fig_cat, use_container_width=True, key="welfare_cat_bar")
-
-    with ca2:
-        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Abusive Account Tracker</div>', unsafe_allow_html=True)
-        acc_df = (
-            df.groupby("account")
-            .agg(posts=("text", "count"), avg_toxicity=("toxicity_score", "mean"), top_category=("category", lambda x: x.mode()[0]))
-            .sort_values("posts", ascending=False)
-            .head(8)
-            .reset_index()
-        )
-        acc_df["avg_toxicity"] = acc_df["avg_toxicity"].round(1)
-
-        header_html = (
+    header_html = (
+        '<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1.5fr;gap:6px;'
+        'padding:5px 10px;background:#0a0c10;border-radius:5px 5px 0 0;margin-bottom:2px">'
+        + ''.join(f'<div style="font-size:9px;color:#4b5563;text-transform:uppercase;letter-spacing:.08em">{h}</div>'
+                  for h in ["Account", "Posts", "Avg Score", "Top Category"])
+        + '</div>'
+    )
+    rows_html = ""
+    for _, row in acc_df.iterrows():
+        sev_c = "#ef4444" if row["avg_toxicity"] >= 80 else "#f59e0b" if row["avg_toxicity"] >= 55 else "#22c55e"
+        rows_html += (
             '<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1.5fr;gap:6px;'
-            'padding:5px 10px;background:#0a0c10;border-radius:5px 5px 0 0;margin-bottom:2px">'
-            + ''.join(f'<div style="font-size:9px;color:#4b5563;text-transform:uppercase;letter-spacing:.08em">{h}</div>'
-                      for h in ["Account", "Posts", "Avg Score", "Top Category"])
-            + '</div>'
+            'padding:6px 10px;border-bottom:1px solid #1a1e27">'
+            f'<div style="font-size:11px;color:#9ca3af">{row["account"]}</div>'
+            f'<div style="font-size:11px;color:#e8eaf0">{row["posts"]}</div>'
+            f'<div style="font-size:11px;color:{sev_c};font-weight:600">{row["avg_toxicity"]}</div>'
+            f'<div style="font-size:11px;color:#6b7280">{row["top_category"]}</div>'
+            '</div>'
         )
-        rows_html = ""
-        for _, row in acc_df.iterrows():
-            sev_c = "#ef4444" if row["avg_toxicity"] >= 80 else "#f59e0b" if row["avg_toxicity"] >= 55 else "#22c55e"
-            rows_html += (
-                '<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1.5fr;gap:6px;'
-                'padding:6px 10px;border-bottom:1px solid #1a1e27">'
-                f'<div style="font-size:11px;color:#9ca3af">{row["account"]}</div>'
-                f'<div style="font-size:11px;color:#e8eaf0">{row["posts"]}</div>'
-                f'<div style="font-size:11px;color:{sev_c};font-weight:600">{row["avg_toxicity"]}</div>'
-                f'<div style="font-size:11px;color:#6b7280">{row["top_category"]}</div>'
-                '</div>'
-            )
-        st.markdown(
-            card(header_html + rows_html, padding="0", bg="#13161d"),
-            unsafe_allow_html=True,
-        )
-
-    # ── Post browser ──────────────────────────────────────────────────────────
-    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
-    st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">Post Browser</div>', unsafe_allow_html=True)
-
-    f1, f2, f3 = st.columns(3)
-    with f1:
-        filter_severity = st.multiselect("Severity", ["HIGH", "MED", "LOW"], default=["HIGH", "MED"], key="wf_sev")
-    with f2:
-        filter_cat = st.multiselect("Category", sorted(df["category"].unique()), default=sorted(df["category"].unique()), key="wf_cat")
-    with f3:
-        filter_platform = st.multiselect("Platform", sorted(df["platform"].unique()), default=sorted(df["platform"].unique()), key="wf_plat")
-
-    filtered = df[
-        df["severity"].isin(filter_severity) &
-        df["category"].isin(filter_cat) &
-        df["platform"].isin(filter_platform)
-    ].head(25)
-
-    sev_colors = {"HIGH": "#ef4444", "MED": "#f59e0b", "LOW": "#22c55e"}
-    sev_bg     = {"HIGH": "#1f0a0a", "MED": "#1c1500", "LOW": "#0a1f0a"}
-
-    for _, row in filtered.iterrows():
-        sc = sev_colors.get(row["severity"], "#6b7280")
-        sb = sev_bg.get(row["severity"], "#13161d")
-        post_html = (
-            f'<div style="background:{sb};border:1px solid {sc}30;border-radius:8px;padding:12px 16px;margin-bottom:8px">'
-            f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
-            f'<div style="font-size:10px;color:#4b5563">'
-            f'<span style="color:#9ca3af">{row["account"]}</span> · {row["platform"]} · '
-            f'{row["timestamp"].strftime("%d %b %H:%M")}'
-            f'</div>'
-            f'<div style="display:flex;gap:6px;align-items:center">'
-            f'<span style="background:#13161d;color:{sc};border:1px solid {sc};font-size:9px;padding:2px 7px;border-radius:8px">{row["severity"]}</span>'
-            f'<span style="background:#13161d;color:#6b7280;border:1px solid #2a2f3d;font-size:9px;padding:2px 7px;border-radius:8px">{row["category"]}</span>'
-            f'<span style="background:#13161d;color:#c8f135;border:1px solid #c8f13550;font-size:9px;padding:2px 7px;border-radius:8px">Score: {row["toxicity_score"]}</span>'
-            f'</div></div>'
-            f'<div style="font-size:12px;color:#e8eaf0;font-style:italic">"{row["text"]}"</div>'
-            f'<div style="font-size:10px;color:#4b5563;margin-top:6px">Targeting: <span style="color:#9ca3af">{row["player"]}</span></div>'
-            f'</div>'
-        )
-        st.markdown(post_html, unsafe_allow_html=True)
+    st.markdown(
+        card(header_html + rows_html, padding="0", bg="#13161d"),
+        unsafe_allow_html=True,
+    )
 
     # ── CSV export ─────────────────────────────────────────────────────────────
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
@@ -499,22 +434,8 @@ def _render_sponsorship(club_name: str, d: dict) -> None:
 
     st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
 
-    # ── Row 1: Age donut + Gender bar + Country ──
-    r1a, r1b, r1c = st.columns(3)
-
-    with r1a:
-        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Age Distribution</div>', unsafe_allow_html=True)
-        age_colors = ["#c8f135", "#22c55e", "#3d9cf0", "#6b7280"]
-        fig_age = go.Figure(go.Pie(
-            labels=sd["age_groups"], values=sd["age_pcts"], hole=0.55,
-            marker_colors=age_colors, textfont=dict(size=10, family="DM Mono, monospace"),
-        ))
-        fig_age.update_layout(
-            paper_bgcolor="#13161d", margin=dict(l=0,r=0,t=10,b=10), height=220,
-            legend=dict(font=dict(size=10,color="#6b7280",family="DM Mono, monospace"),bgcolor="rgba(0,0,0,0)"),
-            font=dict(family="DM Mono, monospace"),
-        )
-        st.plotly_chart(fig_age, use_container_width=True, key="sp_age_donut", config={"displayModeBar":False})
+    # ── Row 1: Gender bar + Country ──
+    r1b, r1c = st.columns(2)
 
     with r1b:
         st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Gender Split</div>', unsafe_allow_html=True)
@@ -549,51 +470,23 @@ def _render_sponsorship(club_name: str, d: dict) -> None:
             )
         st.markdown(card(mkt_html, padding="14px 16px"), unsafe_allow_html=True)
 
-    # ── Row 2: Commercial score histogram + Segment quality ──
-    r2a, r2b = st.columns(2)
-
-    with r2a:
-        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Commercial Score Distribution</div>', unsafe_allow_html=True)
-        buckets = list(range(0, 105, 5))
-        counts  = [0] * (len(buckets) - 1)
-        for s in sd["scores"]:
-            i = min(int(s // 5), len(counts) - 1)
-            counts[i] += 1
-        midpoints = [(buckets[i] + buckets[i+1]) / 2 for i in range(len(buckets)-1)]
-        bar_colors = ["#c8f135" if m >= 70 else "#22c55e" if m >= 50 else "#3d9cf0" if m >= 30 else "#4b5563" for m in midpoints]
-        fig_hist = go.Figure(go.Bar(
-            x=midpoints, y=counts, marker_color=bar_colors, marker_line_width=0,
-        ))
-        fig_hist.add_shape(type="line", x0=sd["base_avg"], x1=sd["base_avg"], y0=0, y1=1,
-                           yref="paper", line=dict(color="#f59e0b", width=2, dash="dot"))
-        fig_hist.add_annotation(x=sd["base_avg"], y=1, yref="paper", text=f"Avg {sd['base_avg']}",
-                                showarrow=False, font=dict(size=9, color="#f59e0b"), xanchor="left", yanchor="top")
-        fig_hist.update_layout(
-            paper_bgcolor="#13161d", plot_bgcolor="#13161d",
-            margin=dict(l=0,r=10,t=20,b=10), height=220,
-            xaxis=dict(showgrid=False, tickfont=dict(size=10,color="#6b7280"), title=dict(text="Commercial Score",font=dict(size=10,color="#4b5563"))),
-            yaxis=dict(showgrid=False, tickfont=dict(size=10,color="#6b7280")),
-            font=dict(family="DM Mono, monospace"),
-        )
-        st.plotly_chart(fig_hist, use_container_width=True, key="sp_comm_hist", config={"displayModeBar":False})
-
-    with r2b:
-        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Audience Quality by Segment</div>', unsafe_allow_html=True)
-        seg_colors = ["#c8f135", "#22c55e", "#3d9cf0", "#6b7280"]
-        fig_seg = go.Figure(go.Bar(
-            y=sd["segs"], x=sd["seg_comm"], orientation="h",
-            marker_color=seg_colors, marker_line_width=0,
-            text=sd["seg_comm"], textposition="inside",
-            textfont=dict(size=11, color="#0a0c10"),
-        ))
-        fig_seg.update_layout(
-            paper_bgcolor="#13161d", plot_bgcolor="#13161d",
-            margin=dict(l=0,r=10,t=10,b=10), height=220,
-            xaxis=dict(showgrid=False, range=[0,100], tickfont=dict(size=10,color="#6b7280")),
-            yaxis=dict(showgrid=False, tickfont=dict(size=11,color="#9ca3af")),
-            font=dict(family="DM Mono, monospace"),
-        )
-        st.plotly_chart(fig_seg, use_container_width=True, key="sp_seg_bar", config={"displayModeBar":False})
+    # ── Audience quality ──
+    st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Audience Quality by Segment</div>', unsafe_allow_html=True)
+    seg_colors = ["#c8f135", "#22c55e", "#3d9cf0", "#6b7280"]
+    fig_seg = go.Figure(go.Bar(
+        y=sd["segs"], x=sd["seg_comm"], orientation="h",
+        marker_color=seg_colors, marker_line_width=0,
+        text=sd["seg_comm"], textposition="inside",
+        textfont=dict(size=11, color="#0a0c10"),
+    ))
+    fig_seg.update_layout(
+        paper_bgcolor="#13161d", plot_bgcolor="#13161d",
+        margin=dict(l=0,r=10,t=10,b=10), height=220,
+        xaxis=dict(showgrid=False, range=[0,100], tickfont=dict(size=10,color="#6b7280")),
+        yaxis=dict(showgrid=False, tickfont=dict(size=11,color="#9ca3af")),
+        font=dict(family="DM Mono, monospace"),
+    )
+    st.plotly_chart(fig_seg, use_container_width=True, key="sp_seg_bar", config={"displayModeBar":False})
 
     # ── Sponsor recommendations ──
     st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
@@ -772,111 +665,28 @@ def _render_matchday(club_name: str, d: dict) -> None:
         unsafe_allow_html=True,
     )
 
-    # ── Row 1: Revenue by segment + Avg spend ──
-    r1a, r1b = st.columns(2)
-
-    with r1a:
-        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Estimated Revenue by Segment</div>', unsafe_allow_html=True)
-        seg_revs = top_fix["seg_revs"]
-        fig_rev = go.Figure(go.Bar(
-            y=[s["segment"] for s in seg_revs],
-            x=[s["revenue"] for s in seg_revs],
-            orientation="h",
-            marker_color=[s["color"] for s in seg_revs],
-            marker_line_width=0,
-            text=[f"£{s['revenue']:,.0f}" for s in seg_revs],
-            textposition="inside",
-            textfont=dict(size=10, color="#0a0c10"),
-        ))
-        fig_rev.update_layout(
-            paper_bgcolor="#13161d", plot_bgcolor="#13161d",
-            margin=dict(l=0,r=10,t=10,b=10), height=230,
-            xaxis=dict(showgrid=False, tickfont=dict(size=10,color="#6b7280"),
-                       tickprefix="£", tickformat=",.0f"),
-            yaxis=dict(showgrid=False, tickfont=dict(size=11,color="#9ca3af")),
-            font=dict(family="DM Mono, monospace"),
-        )
-        st.plotly_chart(fig_rev, use_container_width=True, key="md_rev_bar", config={"displayModeBar":False})
-
-    with r1b:
-        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Avg Spend per Fan by Segment</div>', unsafe_allow_html=True)
-        fig_spend = go.Figure(go.Bar(
-            y=[s["name"] for s in _MATCHDAY_SEGMENTS],
-            x=[s["avg_spend"] for s in _MATCHDAY_SEGMENTS],
-            orientation="h",
-            marker_color=[s["color"] for s in _MATCHDAY_SEGMENTS],
-            marker_line_width=0,
-            text=[f"£{s['avg_spend']}" for s in _MATCHDAY_SEGMENTS],
-            textposition="inside",
-            textfont=dict(size=11, color="#0a0c10"),
-        ))
-        fig_spend.update_layout(
-            paper_bgcolor="#13161d", plot_bgcolor="#13161d",
-            margin=dict(l=0,r=10,t=10,b=10), height=230,
-            xaxis=dict(showgrid=False, tickfont=dict(size=10,color="#6b7280"), tickprefix="£"),
-            yaxis=dict(showgrid=False, tickfont=dict(size=11,color="#9ca3af")),
-            font=dict(family="DM Mono, monospace"),
-        )
-        st.plotly_chart(fig_spend, use_container_width=True, key="md_spend_bar", config={"displayModeBar":False})
-
-    # ── Engagement windows ──
-    st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Pre / During / Post Match Engagement Windows</div>', unsafe_allow_html=True)
-    window_labels = ["Pre -90to-30", "Pre -30toKO", "Half-time", "Post 0-30", "Post 30-90"]
-    fig_win = go.Figure(go.Scatter(
-        x=window_labels, y=md["window_eng"],
-        mode="lines+markers",
-        line=dict(color="#c8f135", width=3),
-        marker=dict(size=10, color="#c8f135", line=dict(color="#0a0c10", width=2)),
-        fill="tozeroy", fillcolor="rgba(200,241,53,0.07)",
+    # ── Estimated Revenue by Segment ──
+    st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Estimated Revenue by Segment</div>', unsafe_allow_html=True)
+    seg_revs = top_fix["seg_revs"]
+    fig_rev = go.Figure(go.Bar(
+        y=[s["segment"] for s in seg_revs],
+        x=[s["revenue"] for s in seg_revs],
+        orientation="h",
+        marker_color=[s["color"] for s in seg_revs],
+        marker_line_width=0,
+        text=[f"£{s['revenue']:,.0f}" for s in seg_revs],
+        textposition="inside",
+        textfont=dict(size=10, color="#0a0c10"),
     ))
-    fig_win.add_shape(type="line", x0="Pre -30toKO", x1="Pre -30toKO", y0=0, y1=1,
-                     yref="paper", line=dict(color="#f59e0b", width=1, dash="dot"))
-    fig_win.add_annotation(x="Pre -30toKO", y=1, yref="paper", text="Kick-off",
-                           showarrow=False, font=dict(size=9, color="#f59e0b"), xanchor="left", yanchor="top")
-    fig_win.add_shape(type="line", x0="Post 0-30", x1="Post 0-30", y0=0, y1=1,
-                     yref="paper", line=dict(color="#f59e0b", width=1, dash="dot"))
-    fig_win.add_annotation(x="Post 0-30", y=0.85, yref="paper", text="Full-time",
-                           showarrow=False, font=dict(size=9, color="#f59e0b"), xanchor="left", yanchor="top")
-    fig_win.update_layout(
+    fig_rev.update_layout(
         paper_bgcolor="#13161d", plot_bgcolor="#13161d",
-        margin=dict(l=0,r=10,t=20,b=10), height=200,
-        xaxis=dict(showgrid=False, tickfont=dict(size=10,color="#6b7280")),
-        yaxis=dict(showgrid=False, tickfont=dict(size=10,color="#6b7280"), title=dict(text="Engagement %", font=dict(size=10,color="#4b5563")), range=[0,100]),
+        margin=dict(l=0,r=10,t=10,b=10), height=230,
+        xaxis=dict(showgrid=False, tickfont=dict(size=10,color="#6b7280"),
+                   tickprefix="£", tickformat=",.0f"),
+        yaxis=dict(showgrid=False, tickfont=dict(size=11,color="#9ca3af")),
         font=dict(family="DM Mono, monospace"),
     )
-    st.plotly_chart(fig_win, use_container_width=True, key="md_win_line", config={"displayModeBar":False})
-
-    # ── Hospitality targets table ──
-    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
-    st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">Top 20 Hospitality Upgrade Targets</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div style="font-size:10px;color:#6b7280;margin-bottom:10px">'
-        'Fans with high engagement scores but no ticket purchase in the last 6+ months — prime upsell candidates.</div>',
-        unsafe_allow_html=True,
-    )
-
-    tbl_header = (
-        '<div style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr 1fr;gap:6px;'
-        'padding:5px 12px;background:#0a0c10;border-radius:5px 5px 0 0;margin-bottom:2px">'
-        + "".join(f'<div style="font-size:9px;color:#4b5563;text-transform:uppercase;letter-spacing:.08em">{h}</div>'
-                  for h in ["Fan ID", "Engagement", "Last Ticket", "LTV Band", "Segment"])
-        + "</div>"
-    )
-    tbl_rows = ""
-    for row in md["hospitality_targets"]:
-        ltv_c = "#c8f135" if row["ltv_band"] == "HIGH" else "#f59e0b"
-        ltv_bg = "#0d1700" if row["ltv_band"] == "HIGH" else "#1c1500"
-        eng_c  = "#22c55e" if row["engagement"] >= 88 else "#3d9cf0"
-        tbl_rows += (
-            f'<div style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr 1fr;gap:6px;'
-            f'padding:7px 12px;border-bottom:1px solid #1a1e27;align-items:center">'
-            f'<div style="font-size:10px;color:#9ca3af;font-family:DM Mono,monospace">{row["fan_id"]}</div>'
-            f'<div style="font-size:11px;color:{eng_c};font-weight:600">{row["engagement"]}</div>'
-            f'<div style="font-size:10px;color:#6b7280">{row["last_ticket"]}</div>'
-            f'<div><span style="background:{ltv_bg};color:{ltv_c};border:1px solid {ltv_c};font-size:9px;padding:2px 7px;border-radius:8px">{row["ltv_band"]}</span></div>'
-            f'<div style="font-size:10px;color:#6b7280">{row["segment"]}</div></div>'
-        )
-    st.markdown(card(tbl_header + tbl_rows, padding="0", bg="#13161d"), unsafe_allow_html=True)
+    st.plotly_chart(fig_rev, use_container_width=True, key="md_rev_bar", config={"displayModeBar":False})
 
 
 # ── Fan Acquisition Intelligence ──────────────────────────────────────────────
@@ -977,57 +787,27 @@ def _render_fan_acquisition(club_name: str, d: dict) -> None:
 
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
 
-    # ── Row 2: Priority bar + Scatter + Age gap ──
-    r2a, r2b = st.columns([1, 1])
-
-    with r2a:
-        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Acquisition Priority Score by Market</div>', unsafe_allow_html=True)
-        bar_colors = ["#c8f135" if m["priority"] >= 70 else "#22c55e" if m["priority"] >= 55 else "#3d9cf0" for m in aq["markets"]]
-        fig_pri = go.Figure(go.Bar(
-            y=[m["country"] for m in reversed(aq["markets"])],
-            x=[m["priority"] for m in reversed(aq["markets"])],
-            orientation="h",
-            marker_color=list(reversed(bar_colors)),
-            marker_line_width=0,
-            text=[str(m["priority"]) for m in reversed(aq["markets"])],
-            textposition="inside",
-            textfont=dict(size=10, color="#0a0c10"),
-        ))
-        fig_pri.update_layout(
-            paper_bgcolor="#13161d", plot_bgcolor="#13161d",
-            margin=dict(l=0,r=10,t=10,b=10), height=280,
-            xaxis=dict(showgrid=False, range=[0,100], tickfont=dict(size=10,color="#6b7280")),
-            yaxis=dict(showgrid=False, tickfont=dict(size=10,color="#9ca3af")),
-            font=dict(family="DM Mono, monospace"),
-        )
-        st.plotly_chart(fig_pri, use_container_width=True, key="aq_pri_bar", config={"displayModeBar":False})
-
-    with r2b:
-        st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Market Landscape · Engagement vs Commercial</div>', unsafe_allow_html=True)
-        mkt_sizes = [max(8, m["fan_count"] // 200) for m in aq["markets"]]
-        scatter_colors = ["#c8f135" if m["priority"] >= 70 else "#22c55e" if m["priority"] >= 55 else "#3d9cf0" for m in aq["markets"]]
-        fig_scat = go.Figure(go.Scatter(
-            x=[m["engagement"] for m in aq["markets"]],
-            y=[m["commercial"] for m in aq["markets"]],
-            mode="markers+text",
-            text=[m["country"].split()[0] for m in aq["markets"]],
-            textposition="top center",
-            textfont=dict(size=9, color="#9ca3af"),
-            marker=dict(
-                size=mkt_sizes,
-                color=scatter_colors,
-                line=dict(color="#0a0c10", width=1),
-                opacity=0.85,
-            ),
-        ))
-        fig_scat.update_layout(
-            paper_bgcolor="#13161d", plot_bgcolor="#13161d",
-            margin=dict(l=0,r=10,t=10,b=30), height=280,
-            xaxis=dict(showgrid=True, gridcolor="#1f2937", title=dict(text="Engagement Score",font=dict(size=10,color="#4b5563")), tickfont=dict(size=10,color="#6b7280"), range=[0,100]),
-            yaxis=dict(showgrid=True, gridcolor="#1f2937", title=dict(text="Commercial Score",font=dict(size=10,color="#4b5563")), tickfont=dict(size=10,color="#6b7280"), range=[0,100]),
-            font=dict(family="DM Mono, monospace"),
-        )
-        st.plotly_chart(fig_scat, use_container_width=True, key="aq_scatter", config={"displayModeBar":False})
+    # ── Acquisition Priority Score by Market ──
+    st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Acquisition Priority Score by Market</div>', unsafe_allow_html=True)
+    bar_colors = ["#c8f135" if m["priority"] >= 70 else "#22c55e" if m["priority"] >= 55 else "#3d9cf0" for m in aq["markets"]]
+    fig_pri = go.Figure(go.Bar(
+        y=[m["country"] for m in reversed(aq["markets"])],
+        x=[m["priority"] for m in reversed(aq["markets"])],
+        orientation="h",
+        marker_color=list(reversed(bar_colors)),
+        marker_line_width=0,
+        text=[str(m["priority"]) for m in reversed(aq["markets"])],
+        textposition="inside",
+        textfont=dict(size=10, color="#0a0c10"),
+    ))
+    fig_pri.update_layout(
+        paper_bgcolor="#13161d", plot_bgcolor="#13161d",
+        margin=dict(l=0,r=10,t=10,b=10), height=280,
+        xaxis=dict(showgrid=False, range=[0,100], tickfont=dict(size=10,color="#6b7280")),
+        yaxis=dict(showgrid=False, tickfont=dict(size=10,color="#9ca3af")),
+        font=dict(family="DM Mono, monospace"),
+    )
+    st.plotly_chart(fig_pri, use_container_width=True, key="aq_pri_bar", config={"displayModeBar":False})
 
     # ── Demographic gap analysis ──
     st.markdown('<div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Demographic Gap Analysis — Current vs Target Age Mix</div>', unsafe_allow_html=True)
@@ -1484,11 +1264,9 @@ fi_html = (
     + '</div>'
     + '<div style="flex:1">'
     + f'<div style="font-size:12px;color:{fi_color};font-weight:500;margin-bottom:6px">{fi_label}</div>'
-    + f'<div style="background:#0a0c10;border-radius:5px;height:6px;overflow:hidden;margin-bottom:12px">'
+    + f'<div style="background:#0a0c10;border-radius:5px;height:6px;overflow:hidden;margin-bottom:6px">'
     + f'<div style="width:{fanIntel_score}%;height:100%;background:{fi_color};border-radius:5px"></div>'
     + '</div>'
-    + '<div style="font-size:9px;color:#4b5563;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Overall Fan &amp; Commercial Health · Composite of all signals</div>'
-    + f'<div style="display:flex;flex-wrap:wrap">{comp_html}</div>'
     + '</div>'
     + '</div>'
 )
@@ -1574,7 +1352,7 @@ st.markdown(cascade_html, unsafe_allow_html=True)
 st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
 # ── KPI row ───────────────────────────────────────────────────────────────────
-k1,k2,k3,k4,k5 = st.columns(5)
+k1,k3,k4,k5 = st.columns(4)
 sent_dir = "up" if kpis["sentiment_score"] >= 65 else "down"
 risk_color = "#ef4444" if kpis["overall_risk"] >= 60 else "#f59e0b" if kpis["overall_risk"] >= 35 else "#22c55e"
 
@@ -1591,8 +1369,6 @@ with k1: st.markdown(kpi_html(
     "#c8f135", "#22c55e" if sent_dir=="up" else "#ef4444",
     sub_delta=f'<span style="color:{delta_30d_color}">{delta_30d_str}</span>',
 ), unsafe_allow_html=True)
-with k2: st.markdown(kpi_html("Content Reach", kpis["content_reach"],
-    "— YouTube · last 6 videos", "#e8eaf0", "#6b7280"), unsafe_allow_html=True)
 with k3: st.markdown(kpi_html("Ticket Demand", kpis["demand_index"],
     f"{'▲ Strong' if kpis['demand_index']>=.8 else '— Average' if kpis['demand_index']>=.65 else '▼ Below avg'}",
     "#e8eaf0", "#22c55e" if kpis["demand_index"]>=.75 else "#f59e0b",
@@ -1614,171 +1390,65 @@ with k5:
 
 st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
-# ── Row 1: Sentiment + Risk Engine ───────────────────────────────────────────
-col1, col2 = st.columns([3,2])
+# ── Fan Risk Engine ───────────────────────────────────────────────────────────
+st.markdown('<div style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0;margin-bottom:10px">Fan Risk Engine · per fixture</div>', unsafe_allow_html=True)
 
-with col1:
-    st.markdown(f'<div style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0;margin-bottom:10px">Cross-channel sentiment · 14 days</div>', unsafe_allow_html=True)
-    colors_map = {"twitter":"#3d9cf0","instagram":"#c8f135","youtube":"#f59e0b","reddit":"#ef4444"}
-    dashes_map = {"twitter":"solid","instagram":"solid","youtube":"dash","reddit":"dot"}
-    fig = go.Figure()
-    for ch,col in colors_map.items():
-        fig.add_trace(go.Scatter(x=trend["dates"], y=trend[ch], name=ch.capitalize(),
-            line=dict(color=col, width=2, dash=dashes_map[ch]), mode="lines"))
-    fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=230,
-        margin=dict(l=0,r=0,t=0,b=0),
-        legend=dict(orientation="h",y=-0.18,x=0,font=dict(color="#6b7280",size=11),bgcolor="rgba(0,0,0,0)"),
-        xaxis=dict(showgrid=True,gridcolor="#1a1e27",tickfont=dict(color="#6b7280",size=10),nticks=7,showline=False),
-        yaxis=dict(showgrid=True,gridcolor="#1a1e27",tickfont=dict(color="#6b7280",size=10),range=[30,100],showline=False),
-    )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar":False})
-
-    # Sentiment breakdown
-    base = kpis["sentiment_score"]
-    channels = ["Twitter / X","Instagram","YouTube","Reddit","Ticket Reviews"]
-    scores = [min(99,int(base*m)) for m in [.95,1.08,.92,1.0,.82]]
-    bar_c = ["#3d9cf0","#c8f135","#f59e0b","#ef4444","#a78bfa"]
-    fig2 = go.Figure()
-    fig2.add_trace(go.Bar(x=scores, y=channels, orientation="h", marker=dict(color=bar_c),
-        text=[str(s) for s in scores], textposition="outside",
-        textfont=dict(color="#e8eaf0",size=11)))
-    fig2.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=190,
-        margin=dict(l=0,r=40,t=20,b=0), title=dict(text="Sentiment by channel",
-        font=dict(family="Syne",size=13,color="#e8eaf0"), x=0),
-        xaxis=dict(range=[0,115],showgrid=False,showticklabels=False),
-        yaxis=dict(tickfont=dict(color="#6b7280",size=11)), showlegend=False)
-    st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar":False})
-
-with col2:
-    st.markdown('<div style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0;margin-bottom:10px">Fan Risk Engine · per fixture</div>', unsafe_allow_html=True)
-
-    for fr in risk["fixture_risks"]:
-        risk_c = "#ef4444" if fr["risk_level"]=="HIGH" else "#f59e0b" if fr["risk_level"]=="MED" else "#22c55e"
-        rival_tag = ' <span style="font-size:9px;color:#3d9cf0;border:1px solid #3d9cf0;padding:1px 5px;border-radius:4px">DERBY</span>' if fr["is_rival"] else ""
-        home_tag = "🏠" if fr["home"] else "✈"
-        st.markdown(f"""
-        <div style="background:#13161d;border:1px solid #1f2937;border-left:3px solid {risk_c};border-radius:8px;padding:12px 14px;margin-bottom:10px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                <div style="font-size:12px;color:#e8eaf0;font-weight:500">{home_tag} vs {fr['opponent']}{rival_tag}</div>
-                <div style="text-align:right">
-                    <div style="font-family:Syne,sans-serif;font-size:20px;font-weight:700;color:{risk_c};line-height:1">{fr['risk_score']}</div>
-                    <div style="font-size:9px;color:#374151">/ 100 risk</div>
-                </div>
-            </div>
-            <div style="font-size:10px;color:#6b7280;margin-bottom:6px">{fr['date']} · {fr['days_away']}d away · Capacity {fr['att_pct']}%</div>
-            <div style="background:#0a0c10;border-radius:4px;height:5px;overflow:hidden">
-                <div style="width:{fr['risk_score']}%;height:100%;background:{risk_c};border-radius:4px"></div>
-            </div>
-        </div>""", unsafe_allow_html=True)
-
-    # Form + Sentiment split
+for fr in risk["fixture_risks"]:
+    risk_c = "#ef4444" if fr["risk_level"]=="HIGH" else "#f59e0b" if fr["risk_level"]=="MED" else "#22c55e"
+    rival_tag = ' <span style="font-size:9px;color:#3d9cf0;border:1px solid #3d9cf0;padding:1px 5px;border-radius:4px">DERBY</span>' if fr["is_rival"] else ""
+    home_tag = "🏠" if fr["home"] else "✈"
     st.markdown(f"""
-    <div style="background:#13161d;border:1px solid #1f2937;border-radius:10px;padding:14px 16px;margin-top:4px">
-        <div style="font-size:10px;color:#6b7280;margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em">Last 5 matches</div>
-        <div style="margin-bottom:12px">{''.join(form_pill_comp(r, c) for r, c in zip(form, form_comp))}</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
-            <div><div style="font-size:10px;color:#22c55e">POS</div><div style="font-family:Syne,sans-serif;font-size:18px;font-weight:700;color:#22c55e">{sent['positive_pct']}%</div></div>
-            <div><div style="font-size:10px;color:#6b7280">NEU</div><div style="font-family:Syne,sans-serif;font-size:18px;font-weight:700;color:#6b7280">{sent['neutral_pct']}%</div></div>
-            <div><div style="font-size:10px;color:#ef4444">NEG</div><div style="font-family:Syne,sans-serif;font-size:18px;font-weight:700;color:#ef4444">{sent['negative_pct']}%</div></div>
+    <div style="background:#13161d;border:1px solid #1f2937;border-left:3px solid {risk_c};border-radius:8px;padding:12px 14px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <div style="font-size:12px;color:#e8eaf0;font-weight:500">{home_tag} vs {fr['opponent']}{rival_tag}</div>
+            <div style="text-align:right">
+                <div style="font-family:Syne,sans-serif;font-size:20px;font-weight:700;color:{risk_c};line-height:1">{fr['risk_score']}</div>
+                <div style="font-size:9px;color:#374151">/ 100 risk</div>
+            </div>
         </div>
-        <div style="font-size:10px;color:#374151;margin-top:8px">Based on {sent['post_count']} posts analysed</div>
+        <div style="font-size:10px;color:#6b7280;margin-bottom:6px">{fr['date']} · {fr['days_away']}d away · Capacity {fr['att_pct']}%</div>
+        <div style="background:#0a0c10;border-radius:4px;height:5px;overflow:hidden">
+            <div style="width:{fr['risk_score']}%;height:100%;background:{risk_c};border-radius:4px"></div>
+        </div>
     </div>""", unsafe_allow_html=True)
 
 st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
-# ── Row 2: Signals + Content + Tickets ───────────────────────────────────────
-s1, s2, s3 = st.columns([1.3, 1, 1])
+# ── Fan intelligence signals ──────────────────────────────────────────────────
+st.markdown('<div style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0;margin-bottom:10px">Fan intelligence signals</div>', unsafe_allow_html=True)
+priority_border = {"HIGH":"#ef4444","MED":"#f59e0b","OPT":"#3d9cf0","LOW":"#22c55e"}
+priority_bg     = {"HIGH":"#1f0a0a","MED":"#1c1500","OPT":"#0a1020","LOW":"#0a1f0a"}
+for sig in signals:
+    bc = priority_border.get(sig["priority"],"#2a2f3d")
+    bg = priority_bg.get(sig["priority"],"#13161d")
+    _sig_src_badge = source_badge(sig.get("source","") == "From your data")
 
-with s1:
-    st.markdown('<div style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0;margin-bottom:10px">Fan intelligence signals</div>', unsafe_allow_html=True)
-    priority_border = {"HIGH":"#ef4444","MED":"#f59e0b","OPT":"#3d9cf0","LOW":"#22c55e"}
-    priority_bg     = {"HIGH":"#1f0a0a","MED":"#1c1500","OPT":"#0a1020","LOW":"#0a1f0a"}
-    for sig in signals:
-        bc = priority_border.get(sig["priority"],"#2a2f3d")
-        bg = priority_bg.get(sig["priority"],"#13161d")
-        _sig_src_badge = source_badge(sig.get("source","") == "From your data")
+    # Claude AI recommendation for HIGH signals
+    ai_block = ""
+    if sig["priority"] == "HIGH":
+        rec = get_claude_recommendation(selected, sig["title"], sig["desc"])
+        if rec:
+            lines = rec.strip().split("\n")
+            formatted = "".join(
+                f'<div style="margin-bottom:3px"><span style="color:#c8f135;font-size:9px">{l.split(":")[0]}:</span>'
+                f'<span style="color:#9ca3af;font-size:9px"> {":".join(l.split(":")[1:]).strip()}</span></div>'
+                for l in lines if ":" in l
+            )
+            ai_block = f"""
+            <div style="background:#0a0c10;border:1px solid #1a2a10;border-radius:6px;padding:8px 10px;margin-top:8px">
+                <div style="font-size:9px;color:#c8f135;margin-bottom:5px;letter-spacing:.05em">✦ CLAUDE AI RECOMMENDATION</div>
+                {formatted}
+            </div>"""
 
-        # Claude AI recommendation for HIGH signals
-        ai_block = ""
-        if sig["priority"] == "HIGH":
-            rec = get_claude_recommendation(selected, sig["title"], sig["desc"])
-            if rec:
-                lines = rec.strip().split("\n")
-                formatted = "".join(
-                    f'<div style="margin-bottom:3px"><span style="color:#c8f135;font-size:9px">{l.split(":")[0]}:</span>'
-                    f'<span style="color:#9ca3af;font-size:9px"> {":".join(l.split(":")[1:]).strip()}</span></div>'
-                    for l in lines if ":" in l
-                )
-                ai_block = f"""
-                <div style="background:#0a0c10;border:1px solid #1a2a10;border-radius:6px;padding:8px 10px;margin-top:8px">
-                    <div style="font-size:9px;color:#c8f135;margin-bottom:5px;letter-spacing:.05em">✦ CLAUDE AI RECOMMENDATION</div>
-                    {formatted}
-                </div>"""
-
-        st.markdown(f"""
-        <div style="background:{bg};border:1px solid #1f2937;border-left:3px solid {bc};border-radius:8px;padding:12px 14px;margin-bottom:10px">
-            <div style="font-size:12px;color:#e8eaf0;font-weight:500;margin-bottom:4px">
-                {risk_badge(sig['priority'])}{sig['title']}{_sig_src_badge}
-            </div>
-            <div style="font-size:11px;color:#6b7280;line-height:1.5;margin-bottom:6px">{sig['desc']}</div>
-            <div style="font-size:10px;color:#3d9cf0">→ {sig.get('action','Review data')}</div>
-            {ai_block}
-        </div>""", unsafe_allow_html=True)
-
-with s2:
-    st.markdown('<div style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0;margin-bottom:10px">Top content · YouTube</div>', unsafe_allow_html=True)
-    if not content["top_videos"]:
-        st.markdown(
-            '<div style="background:#0d1117;border:1px dashed #2a2f3d;border-radius:8px;padding:18px;text-align:center;margin-bottom:8px">'
-            '<div style="font-size:11px;color:#4b5563">No YouTube data in CSV mode</div>'
-            '<div style="font-size:10px;color:#374151;margin-top:4px">Content engagement is derived from your Engagement_Score column</div>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-    for v in content["top_videos"][:4]:
-        views = v["views"]
-        vfmt = f"{views/1_000_000:.1f}M" if views>=1_000_000 else f"{views//1000}K" if views>=1000 else str(views)
-        eng = round(v["likes"]/views*100,1) if views>0 else 0
-        title = v["title"][:48]+("..." if len(v["title"])>48 else "")
-        url_part = f'<a href="{v["url"]}" target="_blank" style="color:#3d9cf0;font-size:9px">▶ Watch</a>' if v.get("url") else ""
-        st.markdown(f"""
-        <div style="background:#13161d;border:1px solid #1f2937;border-radius:8px;padding:10px 12px;margin-bottom:8px">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start">
-                <div style="flex:1;min-width:0">
-                    <div style="font-size:11px;color:#e8eaf0;margin-bottom:3px;line-height:1.4">{title}</div>
-                    <div style="font-size:10px;color:#6b7280">{v['published']} {url_part}</div>
-                </div>
-                <div style="text-align:right;margin-left:10px;flex-shrink:0">
-                    <div style="font-family:Syne,sans-serif;font-size:15px;font-weight:700;color:#c8f135">{vfmt}</div>
-                    <div style="font-size:9px;color:#6b7280">{eng}% eng</div>
-                </div>
-            </div>
-        </div>""", unsafe_allow_html=True)
-
-with s3:
-    st.markdown('<div style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0;margin-bottom:10px">Ticket demand · Next fixtures</div>', unsafe_allow_html=True)
-    for f in tickets["fixtures"]:
-        pct = f["att_pct"]
-        bar_c = "#c8f135" if pct>=80 else "#3d9cf0" if pct>=60 else "#ef4444"
-        vel_c = "#22c55e" if "fast" in f["velocity"].lower() else "#3d9cf0" if "Rising" in f["velocity"] else "#6b7280"
-        home_icon = "🏠" if f["home"] else "✈"
-        derby_tag = ' <span style="font-size:9px;color:#f59e0b">DERBY</span>' if f["is_rival"] else ""
-        st.markdown(f"""
-        <div style="background:#13161d;border:1px solid #1f2937;border-radius:8px;padding:12px 14px;margin-bottom:8px">
-            <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-                <div style="font-size:12px;color:#e8eaf0">{home_icon} vs {f['opponent']}{derby_tag}</div>
-                <div style="font-family:Syne,sans-serif;font-size:14px;font-weight:600;color:{bar_c}">{pct}%</div>
-            </div>
-            <div style="background:#0a0c10;border-radius:3px;height:4px;margin-bottom:6px;overflow:hidden">
-                <div style="width:{pct}%;height:100%;background:{bar_c};border-radius:3px"></div>
-            </div>
-            <div style="display:flex;justify-content:space-between;font-size:10px">
-                <span style="color:#6b7280">{f['date']}</span>
-                <span style="color:{vel_c}">{f['velocity']}</span>
-            </div>
-        </div>""", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style="background:{bg};border:1px solid #1f2937;border-left:3px solid {bc};border-radius:8px;padding:12px 14px;margin-bottom:10px">
+        <div style="font-size:12px;color:#e8eaf0;font-weight:500;margin-bottom:4px">
+            {risk_badge(sig['priority'])}{sig['title']}{_sig_src_badge}
+        </div>
+        <div style="font-size:11px;color:#6b7280;line-height:1.5;margin-bottom:6px">{sig['desc']}</div>
+        <div style="font-size:10px;color:#3d9cf0">→ {sig.get('action','Review data')}</div>
+        {ai_block}
+    </div>""", unsafe_allow_html=True)
 
 st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
@@ -1835,29 +1505,6 @@ else:
                 {channel_html}
             </div>""", unsafe_allow_html=True)
 
-# ── WSL Context Panel ─────────────────────────────────────────────────────────
-render_wsl_context_panel()
-
-# ── League context strip ──────────────────────────────────────────────────────
-st.markdown("<hr style='border-color:#1f2937;margin:16px 0 16px'>", unsafe_allow_html=True)
-st.markdown('<div style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0;margin-bottom:10px">WSL standings context · 2024–25</div>', unsafe_allow_html=True)
-
-league_clubs = {k: v for k, v in WSL_LEAGUE_CONTEXT.items()}
-lc = st.columns(len(league_clubs))
-for i, (club, data) in enumerate(league_clubs.items()):
-    is_selected = False  # No club selected in CSV mode
-    bg = "#13161d"
-    border = "#1f2937"
-    form_str = " ".join(data["last_5_form"])
-    with lc[i]:
-        st.markdown(f"""
-        <div style="background:{bg};border:1px solid {border};border-radius:8px;padding:10px 12px;text-align:center">
-            <div style="font-size:10px;color:{'#c8f135' if is_selected else '#9ca3af'};font-weight:500;margin-bottom:4px">{club}</div>
-            <div style="font-family:Syne,sans-serif;font-size:22px;font-weight:800;color:{'#c8f135' if is_selected else '#e8eaf0'}">#{data['position']}</div>
-            <div style="font-size:11px;color:#6b7280">{data['pts']} pts</div>
-            <div style="font-size:10px;color:#4b5563;margin-top:4px">{form_str}</div>
-        </div>""", unsafe_allow_html=True)
-
 # ── Feature 1: Attendance Prediction Engine ───────────────────────────────────
 st.markdown("<hr style='border-color:#1f2937;margin:16px 0 16px'>", unsafe_allow_html=True)
 _att_from_data = features.get("attendance_prediction", False)
@@ -1902,46 +1549,6 @@ if att_preds:
             st.markdown(card_html, unsafe_allow_html=True)
 else:
     st.markdown('<div style="color:#4b5563;font-size:11px">No fixture data available.</div>', unsafe_allow_html=True)
-
-# ── Feature 2: Fan Churn Risk Score ───────────────────────────────────────────
-st.markdown("<hr style='border-color:#1f2937;margin:20px 0 16px'>", unsafe_allow_html=True)
-_churn_from_data = features.get("churn_risk", False)
-st.markdown(
-    f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'
-    f'<span style="font-family:Syne,sans-serif;font-size:13px;font-weight:600;color:#e8eaf0">Fan Churn Risk Score · per cohort</span>'
-    f'{source_badge(_churn_from_data)}'
-    f'</div>',
-    unsafe_allow_html=True,
-)
-
-if not churn_risks:
-    feature_gate_placeholder("Fan Churn Risk Score", ["Last_Attended"])
-else:
-    churn_cols = st.columns(len(churn_risks))
-    for i, cr in enumerate(churn_risks):
-        churn = cr["churn_pct"]
-        rl    = cr["risk_level"]
-        rc    = "#ef4444" if rl=="HIGH" else "#f59e0b" if rl=="MED" else "#22c55e"
-        rb    = "#1f0a0a" if rl=="HIGH" else "#1c1500" if rl=="MED" else "#0a1f0a"
-        _cr_badge = source_badge(cr.get("source") == "from_data")
-        with churn_cols[i]:
-            st.markdown(f"""
-            <div style="background:#13161d;border:1px solid #1f2937;border-top:3px solid {rc};border-radius:8px;padding:14px 12px;height:100%">
-                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                    <div style="font-size:11px;color:#e8eaf0;font-weight:500">{cr['name']}</div>
-                    {_cr_badge}
-                </div>
-                <div style="font-family:Syne,sans-serif;font-size:28px;font-weight:800;color:{rc};line-height:1">{churn}%</div>
-                <div style="font-size:9px;color:{rc};margin-bottom:2px;letter-spacing:.05em">CHURN RISK</div>
-                <div style="font-size:9px;color:#374151;margin-bottom:8px">% of cohort at risk of lapsing</div>
-                <div style="background:#0a0c10;border-radius:3px;height:4px;margin-bottom:10px;overflow:hidden">
-                    <div style="width:{churn}%;height:100%;background:{rc};border-radius:3px"></div>
-                </div>
-                <div style="background:{rb};border:1px solid {rc}22;border-radius:5px;padding:6px 8px">
-                    <div style="font-size:8px;color:{rc};letter-spacing:.05em;margin-bottom:3px">RETENTION ACTION</div>
-                    <div style="font-size:9px;color:#9ca3af;line-height:1.5">→ {cr['retention_action']}</div>
-                </div>
-            </div>""", unsafe_allow_html=True)
 
 # ── Feature 3: Player Sentiment Influence ─────────────────────────────────────
 st.markdown("<hr style='border-color:#1f2937;margin:20px 0 16px'>", unsafe_allow_html=True)

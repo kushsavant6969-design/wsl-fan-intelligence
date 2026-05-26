@@ -944,7 +944,6 @@ def _get_sample_csv_b64() -> str:
         last_dt = (datetime.now() - timedelta(days=last_days_ago)).strftime("%Y-%m-%d")
         tkts = rng.randint(0, 18) if last_days_ago < 365 else rng.randint(0, 3)
         spend = round(tkts * rng.uniform(12, 95) + rng.uniform(0, 120), 2)
-        eng = round(rng.uniform(0.05, 0.98), 2)
         rows.append({
             "Fan_ID":            f"WSL-{i:04d}",
             "Age":               age,
@@ -953,7 +952,6 @@ def _get_sample_csv_b64() -> str:
             "Tickets_Purchased": tkts,
             "Spend":             spend,
             "Favourite_Player":  rng.choice(players),
-            "Engagement_Score":  eng,
             "Channel_Preference":rng.choice(channels),
             "Membership_Type":   rng.choice(memberships),
             "Postcode_District": rng.choice(postcodes),
@@ -1018,7 +1016,6 @@ def render_upload_screen() -> None:
         ("Age",               "Fan Cohort Breakdown",                         True),
         ("Last_Attended",     "Churn Risk Score + Attendance Prediction",      True),
         ("Tickets_Purchased", "Ticket Demand Index + Fan Risk Score",          True),
-        ("Engagement_Score",  "Cross-channel Sentiment Score",                 True),
         ("Spend",             "Commercial Impact Summary + Sponsor Exposure",  False),
         ("Favourite_Player",  "Player Sentiment Intelligence (gated module)",  False),
         ("Channel_Preference","Actionable Campaign Recommendations",           False),
@@ -1169,6 +1166,8 @@ def pill(label, source_type):
         return f'<span style="background:#052e16;color:#22c55e;border:1px solid #166534;font-size:9px;padding:2px 8px;border-radius:10px;margin-right:5px">⬤ Live · {label}</span>'
     if source_type == "csv":
         return f'<span style="background:#0a1020;color:#3d9cf0;border:1px solid #1e3a5f;font-size:9px;padding:2px 8px;border-radius:10px;margin-right:5px">● Your data · {label}</span>'
+    if source_type == "fanIntel":
+        return f'<span style="background:#130a2a;color:#a78bfa;border:1px solid #4c1d95;font-size:9px;padding:2px 8px;border-radius:10px;margin-right:5px">◈ FanIntel · {label}</span>'
     return f'<span style="background:#1c1500;color:#f59e0b;border:1px solid #92400e;font-size:9px;padding:2px 8px;border-radius:10px;margin-right:5px">◯ Modelled · {label}</span>'
 
 _sent_src = sources["sentiment"]  # "csv", "live", or "simulated"
@@ -1199,7 +1198,8 @@ if not st.session_state["guide_dismissed"]:
                 <div style="font-size:11px;color:#6b7280;line-height:1.7">
                     FanIntel auto-detected your column names and built the dashboard from your data.
                     Sections marked <span style="color:#22c55e">From your data</span> use your real numbers.
-                    Sections marked <span style="color:#f59e0b">Modelled</span> are computed estimates.
+                    Sections marked <span style="color:#a78bfa">FanIntel</span> are metrics calculated by FanIntel from your data (e.g. Engagement Score).
+                    Sections marked <span style="color:#f59e0b">Modelled</span> are estimated.
                 </div>
             </div>
             <div>

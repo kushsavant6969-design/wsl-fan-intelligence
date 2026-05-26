@@ -28,8 +28,6 @@ CANONICAL_COLUMNS = {
                           "lifetime_value","customer_spend","cumulative_spend"],
     "Favourite_Player":  ["favourite_player","favorite_player","fav_player","preferred_player",
                           "top_player","fav player","favourite player"],
-    "Engagement_Score":  ["engagement_score","engagement","engagement_index","eng_score",
-                          "digital_engagement","engagement_level"],
     "Channel_Preference":["channel_preference","preferred_channel","channel","comms_channel",
                           "pref_channel","communication_channel"],
     "Membership_Type":   ["membership_type","membership","fan_type","tier","subscription_type",
@@ -39,9 +37,10 @@ CANONICAL_COLUMNS = {
 }
 
 # Columns that unlock the full feature set
-CORE_COLUMNS = {"Fan_ID", "Age", "Last_Attended", "Tickets_Purchased", "Engagement_Score"}
+CORE_COLUMNS = {"Fan_ID", "Age", "Last_Attended", "Tickets_Purchased"}
 
 # Feature gate: canonical columns needed to unlock each feature
+# Note: "sentiment" is always available — FanIntel derives it from uploaded signals
 FEATURE_GATES = {
     "fan_cohorts":           {"Age"},
     "churn_risk":            {"Last_Attended"},
@@ -49,7 +48,7 @@ FEATURE_GATES = {
     "player_intelligence":   {"Favourite_Player"},
     "commercial_impact":     {"Spend"},
     "campaign_recs":         {"Channel_Preference"},
-    "sentiment":             {"Engagement_Score"},
+    "sentiment":             set(),   # always computed by FanIntel
     "geo_analysis":          {"Postcode_District"},
 }
 
@@ -121,6 +120,34 @@ def _days_since(df: pd.DataFrame, col: str) -> pd.Series:
     return (datetime.now() - _dates(df, col)).dt.days.clip(lower=0)
 
 
+def _compute_fan_engagement(df: pd.DataFrame, col_map: dict) -> pd.Series:
+    """
+    Derive a per-fan FanIntel Engagement Score (0–100) from available signals.
+    Uses recency (Last_Attended), frequency (Tickets_Purchased), and spend
+    signals — whichever are present. Never reads an Engagement_Score column;
+    this metric is always FanIntel-calculated.
+    """
+    parts = []
+    if "Last_Attended" in col_map:
+        days = _days_since(df, col_map["Last_Attended"])
+        # Recency: 0 days→100, 365+ days→20
+        recency = (100.0 - (days.clip(0, 365) / 365.0 * 80.0)).clip(20.0, 100.0)
+        parts.append(recency.values)
+    if "Tickets_Purchased" in col_map:
+        tkts = _num(df, col_map["Tickets_Purchased"])
+        max_t = max(float(tkts.quantile(0.95)), 1.0)
+        freq = (20.0 + (tkts.clip(0, max_t) / max_t * 70.0)).clip(20.0, 90.0)
+        parts.append(freq.values)
+    if "Spend" in col_map:
+        spend = _num(df, col_map["Spend"])
+        max_s = max(float(spend.quantile(0.95)), 1.0)
+        spend_sc = (20.0 + (spend.clip(0, max_s) / max_s * 70.0)).clip(20.0, 90.0)
+        parts.append(spend_sc.values)
+    if parts:
+        return pd.Series(np.mean(parts, axis=0), index=df.index).round(1)
+    return pd.Series([65.0] * len(df), index=df.index)
+
+
 def _pdf_safe(text: str) -> str:
     """Strip / replace unicode chars that FPDF's latin-1 encoder rejects."""
     return (
@@ -139,14 +166,9 @@ def compute_kpis(df: pd.DataFrame, col_map: dict) -> dict:
     kpis = {}
     total = len(df)
 
-    # Sentiment ← Engagement_Score
-    if "Engagement_Score" in col_map:
-        eng = _num(df, col_map["Engagement_Score"])
-        if eng.max() <= 1.0:
-            eng = eng * 100
-        kpis["sentiment_score"] = int(round(eng.mean()))
-    else:
-        kpis["sentiment_score"] = 65
+    # FanIntel Engagement Score — always derived from uploaded signals
+    _eng = _compute_fan_engagement(df, col_map)
+    kpis["sentiment_score"] = int(round(float(_eng.mean())))
 
     # Ticket demand ← Tickets_Purchased (fraction of fans who bought ≥1)
     if "Tickets_Purchased" in col_map:
@@ -244,12 +266,11 @@ def compute_cohorts(df: pd.DataFrame, col_map: dict) -> list:
             if not band_days.empty:
                 risk_score = int(min(95, max(10, float(band_days.mean()) / 3.65)))
 
-        if "Engagement_Score" in col_map and count > 0:
-            eng = _num(df, col_map["Engagement_Score"])
-            band_eng = eng[mask[:len(eng)]]
+        if count > 0:
+            fan_eng = _compute_fan_engagement(df, col_map)
+            band_eng = fan_eng[mask[:len(fan_eng)]]
             if not band_eng.empty:
-                val = float(band_eng.mean())
-                engagement = int(val * 100 if val <= 1.0 else val)
+                engagement = int(round(float(band_eng.mean())))
 
         act = _COHORT_ACTIONS[name]
         cohorts.append({
@@ -353,12 +374,8 @@ def compute_player_influence(df: pd.DataFrame, col_map: dict) -> list:
     total = len(df)
     counts = df[player_col].value_counts()
 
-    overall_eng = 50.0
-    if "Engagement_Score" in col_map:
-        eng = _num(df, col_map["Engagement_Score"])
-        overall_eng = float(eng.mean())
-        if overall_eng <= 1.0:
-            overall_eng *= 100
+    fan_eng = _compute_fan_engagement(df, col_map)
+    overall_eng = float(fan_eng.mean())
 
     results = []
     for player, cnt in counts.head(10).items():
@@ -368,12 +385,9 @@ def compute_player_influence(df: pd.DataFrame, col_map: dict) -> list:
         mask = (df[player_col] == player).values
 
         eng_val = overall_eng
-        if "Engagement_Score" in col_map:
-            peng = _num(df, col_map["Engagement_Score"])[mask[:len(df)]]
-            if not peng.empty:
-                eng_val = float(peng.mean())
-                if eng_val <= 1.0:
-                    eng_val *= 100
+        peng = fan_eng[mask[:len(fan_eng)]]
+        if not peng.empty:
+            eng_val = float(peng.mean())
 
         lift = round(eng_val - overall_eng, 1)
         mult = round(eng_val / overall_eng, 1) if overall_eng > 0 else 1.0
@@ -418,23 +432,20 @@ def generate_csv_signals(df: pd.DataFrame, col_map: dict, kpis: dict) -> list:
                 "action":   "Launch win-back email series with 30% discount + matchday reel",
             })
 
-    # Low engagement
-    if "Engagement_Score" in col_map:
-        eng = _num(df, col_map["Engagement_Score"])
-        if eng.max() <= 1.0:
-            eng = eng * 100
-        low_eng_pct = round(float((eng < 30).mean()) * 100)
-        if low_eng_pct > 20:
-            signals.append({
-                "priority": "HIGH",
-                "title":    f"{low_eng_pct}% of fans have low digital engagement",
-                "desc":     (
-                    "A large segment shows engagement score below 30/100. "
-                    "Digital re-engagement campaign needed — personalised content by channel."
-                ),
-                "source":   "From your data",
-                "action":   "Personalised digital re-engagement campaign by preferred channel",
-            })
+    # Low engagement — derived from FanIntel engagement score
+    fan_eng = _compute_fan_engagement(df, col_map)
+    low_eng_pct = round(float((fan_eng < 30).mean()) * 100)
+    if low_eng_pct > 20:
+        signals.append({
+            "priority": "HIGH",
+            "title":    f"{low_eng_pct}% of fans have low engagement",
+            "desc":     (
+                "FanIntel's engagement model shows a large segment scoring below 30/100. "
+                "Digital re-engagement campaign needed — personalised content by channel."
+            ),
+            "source":   "FanIntel",
+            "action":   "Personalised digital re-engagement campaign by preferred channel",
+        })
 
     # Ticket demand
     if demand < 0.65:
@@ -652,7 +663,7 @@ def build_csv_data_dict(df: pd.DataFrame, col_map: dict) -> dict:
         "form_comp":              ["WSL"] * len(form),
         "cohorts":                cohorts,
         "kpis":                   kpis,
-        "data_sources":           {"sentiment": "csv", "content": "csv"},
+        "data_sources":           {"sentiment": "fanIntel", "content": "csv"},
         "attendance_predictions": att_preds,
         "churn_risks":            churn_risks,
         "player_influence":       player_inf,

@@ -31,6 +31,8 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+_EMAIL_TEMPLATES: dict = {}  # populated below; guard against reference before assignment
+
 # ── CSS (dark theme matching WSL app palette) ────────────────────────────────
 st.markdown("""
 <style>

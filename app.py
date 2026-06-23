@@ -925,9 +925,9 @@ def render_wsl_context_panel() -> None:
 
 
 # ── Upload Screen ─────────────────────────────────────────────────────────────
-def _get_sample_csv_b64() -> str:
-    """Return base64-encoded sample CSV for download button."""
-    import io, random as rnd
+def _build_sample_df() -> pd.DataFrame:
+    """Generate the 200-row sample fan DataFrame (seeded for reproducibility)."""
+    import random as rnd
     rng = rnd.Random(42)
     players = ["Sam Kerr", "Vivianne Miedema", "Beth Mead", "Lauren Hemp",
                "Rachel Daly", "Chloe Kelly", "Millie Bright", "Erin Cuthbert"]
@@ -956,8 +956,13 @@ def _get_sample_csv_b64() -> str:
             "Membership_Type":   rng.choice(memberships),
             "Postcode_District": rng.choice(postcodes),
         })
+    return pd.DataFrame(rows)
+
+
+def _get_sample_csv_b64() -> str:
+    """Return base64-encoded sample CSV for download button."""
     buf = io.StringIO()
-    pd.DataFrame(rows).to_csv(buf, index=False)
+    _build_sample_df().to_csv(buf, index=False)
     return base64.b64encode(buf.getvalue().encode()).decode()
 
 
@@ -974,7 +979,7 @@ def render_upload_screen() -> None:
         </div>
     </div>""", unsafe_allow_html=True)
 
-    up_col, dl_col = st.columns([3, 1])
+    up_col, dl_col, demo_col = st.columns([3, 1, 1])
     with up_col:
         uploaded = st.file_uploader(
             "Drop your CSV here or click Browse",
@@ -991,6 +996,13 @@ def render_upload_screen() -> None:
             f'⬇ Sample CSV (200 fans)</a>',
             unsafe_allow_html=True,
         )
+    with demo_col:
+        st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+        if st.button("▶ Load Sample Data", key="load_demo", use_container_width=True):
+            sample_df = _build_sample_df()
+            st.session_state["csv_df"] = sample_df
+            st.session_state["csv_col_map"] = detect_columns(sample_df)
+            st.rerun()
 
     if uploaded is not None:
         try:

@@ -1,4 +1,4 @@
-"""Generate sample CSV for FanIQ — 300 fans, sport-agnostic."""
+"""Generate sample CSV for FanIQ - 300 fans, sport-agnostic."""
 import pandas as pd
 import numpy as np
 from datetime import date, timedelta
@@ -40,7 +40,7 @@ def generate_sample_data(n: int = 300) -> pd.DataFrame:
     mem_order = {"None": 0, "Bronze": 1, "Silver": 2, "Gold": 3, "Platinum": 4}
     mem_rank = np.array([mem_order[m] for m in mem_types])
 
-    # Last attended — higher tier = more recent
+    # Last attended - higher tier = more recent
     last_attended = []
     for m in mem_types:
         if m == "None":
@@ -79,7 +79,7 @@ def generate_sample_data(n: int = 300) -> pd.DataFrame:
         else:
             channel_prefs.append(rng.choice(["Email", "SMS", "Direct Mail"], p=[0.55, 0.30, 0.15]))
 
-    # Favourite player — mix of football and cricket
+    # Favourite player - mix of football and cricket
     fav_players = []
     for country in countries:
         if country in ["India", "Pakistan", "Australia", "Bangladesh", "Sri Lanka",
@@ -115,4 +115,4 @@ def generate_template() -> pd.DataFrame:
 if __name__ == "__main__":
     df = generate_sample_data(300)
     df.to_csv("faniq_sample.csv", index=False)
-    print(f"Generated faniq_sample.csv — {len(df)} rows, {len(df.columns)} columns")
+    print(f"Generated faniq_sample.csv - {len(df)} rows, {len(df.columns)} columns")

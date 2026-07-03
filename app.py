@@ -1,5 +1,5 @@
 """
-FanIQ — Know your fans. Act on the insight.
+FanIQ - Know your fans. Act on the insight.
 Sport-agnostic fan segmentation and campaign intelligence platform.
 """
 import streamlit as st
@@ -156,11 +156,11 @@ COLUMN_ALIASES = {
 }
 
 SEGMENT_COLORS = {
-    "VIP":            "#E8FF00",
-    "High Potential": "#00E5FF",
-    "Regular":        "#7B68EE",
-    "Win Back":       "#FF6B6B",
-    "Dormant":        "#555",
+    "VIP":            "#C8F135",  # Primary
+    "High Potential": "#3B82F6",  # Secondary
+    "Regular":        "#8B5CF6",  # Tertiary
+    "Win Back":       "#EF4444",  # Negative
+    "Dormant":        "#6B7280",  # Neutral
 }
 
 
@@ -355,7 +355,7 @@ def render_upload_screen():
 
     with col_up:
         st.markdown('<div class="section-header">Upload Your Fan Database</div>', unsafe_allow_html=True)
-        st.markdown('<p style="color:#888;font-size:13px;">Any CSV format. FanIQ auto-detects columns — no template required.</p>', unsafe_allow_html=True)
+        st.markdown('<p style="color:#888;font-size:13px;">Any CSV format. FanIQ auto-detects columns, no template required.</p>', unsafe_allow_html=True)
 
         uploaded = st.file_uploader("Drop your CSV here or click to browse", type=["csv"], label_visibility="collapsed")
 
@@ -449,7 +449,7 @@ def render_fan_dashboard(df: pd.DataFrame):
         fig2 = go.Figure(go.Funnel(
             y=stages, x=counts,
             textinfo="value+percent initial",
-            marker_color=["#E8FF00", "#b8cc00", "#00E5FF", "#00b8cc", "#7B68EE"],
+            marker_color=["#6B7280", "#8B5CF6", "#3B82F6", "#9FC93B", "#C8F135"],
         ))
         fig2.update_layout(
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
@@ -461,11 +461,11 @@ def render_fan_dashboard(df: pd.DataFrame):
     st.markdown('<div class="section-header">Score Distributions</div>', unsafe_allow_html=True)
     s1, s2, s3, s4, s5 = st.columns(5)
     score_cols = [
-        ("Engagement_Score_Pct", "Engagement", "#E8FF00", s1, "dash_eng"),
-        ("Commercial_Score", "Commercial", "#00E5FF", s2, "dash_comm"),
-        ("Loyalty_Score", "Loyalty", "#7B68EE", s3, "dash_loy"),
-        ("Churn_Risk", "Churn Risk", "#FF6B6B", s4, "dash_churn"),
-        ("Conversion_Probability", "Conversion", "#00FF88", s5, "dash_conv"),
+        ("Engagement_Score_Pct", "Engagement", "#C8F135", s1, "dash_eng"),    # Primary
+        ("Commercial_Score", "Commercial", "#3B82F6", s2, "dash_comm"),       # Secondary
+        ("Loyalty_Score", "Loyalty", "#8B5CF6", s3, "dash_loy"),              # Tertiary
+        ("Churn_Risk", "Churn Risk", "#EF4444", s4, "dash_churn"),            # Negative
+        ("Conversion_Probability", "Conversion", "#C8F135", s5, "dash_conv"), # Primary
     ]
     for col, label, color, container, key in score_cols:
         with container:
@@ -483,7 +483,7 @@ def render_fan_dashboard(df: pd.DataFrame):
     # Row 3: LTV distribution
     st.markdown('<div class="section-header">Fan LTV Distribution</div>', unsafe_allow_html=True)
     fig_ltv = px.histogram(df, x="LTV_Estimate", nbins=30,
-                           color_discrete_sequence=["#E8FF00"],
+                           color_discrete_sequence=["#C8F135"],
                            labels={"LTV_Estimate": "Estimated LTV"})
     fig_ltv.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
@@ -510,35 +510,35 @@ def render_fan_dashboard(df: pd.DataFrame):
 CAMPAIGN_CONFIG = {
     "VIP": {
         "objective": "Retain and deepen relationship with highest-value fans.",
-        "angle": "Exclusive access and early recognition — make them feel seen.",
+        "angle": "Exclusive access and early recognition - make them feel seen.",
         "offer": "Priority season ticket renewal, VIP matchday experience, exclusive behind-the-scenes access.",
         "timing": "Send 6 weeks before season ticket renewal window opens.",
         "metric": "Renewal rate and upsell to premium hospitality.",
     },
     "High Potential": {
         "objective": "Convert engaged fans into members or season ticket holders.",
-        "angle": "FOMO and value — show them what they are missing by not committing.",
+        "angle": "FOMO and value - show them what they are missing by not committing.",
         "offer": "Early bird season ticket offer with instalment payment option.",
         "timing": "Send immediately after a high-attendance fixture to capitalise on enthusiasm.",
         "metric": "Membership conversion rate and first ticket purchase.",
     },
     "Regular": {
         "objective": "Increase visit frequency and average transaction value.",
-        "angle": "Community belonging — they already care, reward the habit.",
+        "angle": "Community belonging - they already care, reward the habit.",
         "offer": "Bring a friend match ticket bundle, stadium dining offer.",
         "timing": "Send 10 days before next home fixture.",
         "metric": "Attendance uplift and secondary spend per visit.",
     },
     "Win Back": {
         "objective": "Re-engage fans who have drifted in the past 6 to 18 months.",
-        "angle": "Nostalgia and we miss you — reference their last visit if data allows.",
+        "angle": "Nostalgia and we miss you - reference their last visit if data allows.",
         "offer": "Two-for-one match ticket to get them back through the door.",
         "timing": "Send mid-week, not on matchday. Give them time to plan.",
         "metric": "Click-through rate and first reattendance within 60 days.",
     },
     "Dormant": {
         "objective": "Low-cost reactivation or graceful suppression of unresponsive fans.",
-        "angle": "Simple curiosity hook — what's new since you last visited.",
+        "angle": "Simple curiosity hook - what's new since you last visited.",
         "offer": "Free match ticket for one specific fixture as a reactivation gift.",
         "timing": "Send once. If no response within 30 days, move to suppression list.",
         "metric": "Open rate and link click. Anything above 5% is a win.",
@@ -579,7 +579,7 @@ def get_conversion_est(df: pd.DataFrame, segment: str) -> float:
 
 
 def render_campaign_intelligence(df: pd.DataFrame):
-    st.markdown('<div class="section-header">Campaign Briefs — Auto-generated from your data</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">Campaign Briefs - Auto-generated from your data</div>', unsafe_allow_html=True)
     st.markdown('<p style="color:#888;font-size:13px;">FanIQ generates a ready-to-execute brief for each fan segment based on their behaviour and commercial profile.</p>', unsafe_allow_html=True)
 
     seg_order = ["VIP", "High Potential", "Regular", "Win Back", "Dormant"]
@@ -683,7 +683,7 @@ def generate_campaign_pdf(briefs: list) -> bytes:
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 20)
     pdf.set_text_color(20, 20, 20)
-    pdf.cell(0, 12, _pdf_safe("FanIQ — Campaign Briefs"), ln=True)
+    pdf.cell(0, 12, _pdf_safe("FanIQ - Campaign Briefs"), ln=True)
     pdf.set_font("Helvetica", "", 11)
     pdf.set_text_color(100, 100, 100)
     pdf.cell(0, 8, _pdf_safe(f"Generated {TODAY.strftime('%d %B %Y')}"), ln=True)
@@ -697,7 +697,7 @@ def generate_campaign_pdf(briefs: list) -> bytes:
     for b in briefs:
         pdf.set_font("Helvetica", "B", 14)
         pdf.set_text_color(20, 20, 20)
-        seg_label = _pdf_safe(f"{b['segment']} Segment — {b['count']:,} fans ({b['conv']*100:.0f}% est. conversion)")
+        seg_label = _pdf_safe(f"{b['segment']} Segment - {b['count']:,} fans ({b['conv']*100:.0f}% est. conversion)")
         pdf.cell(0, 10, seg_label, ln=True)
         pdf.set_draw_color(200, 200, 200)
         pdf.line(10, pdf.get_y(), 200, pdf.get_y())
@@ -770,9 +770,9 @@ def render_audience_story(df: pd.DataFrame):
     win_back_count = (df["Segment"] == "Win Back").sum()
     dormant_count = (df["Segment"] == "Dormant").sum()
     high_pot_count = (df["Segment"] == "High Potential").sum()
-    opp_lines.append(f"{win_back_count:,} fans are in the Win Back segment — commercially active but drifting. These represent the highest immediate revenue recovery opportunity.")
+    opp_lines.append(f"{win_back_count:,} fans are in the Win Back segment - commercially active but drifting. These represent the highest immediate revenue recovery opportunity.")
     opp_lines.append(f"{dormant_count:,} fans are Dormant. A 10% reactivation rate would recover {dormant_count // 10:,} fans.")
-    opp_lines.append(f"{high_pot_count:,} High Potential fans are engaged but not yet converted to membership — the clearest upsell pipeline.")
+    opp_lines.append(f"{high_pot_count:,} High Potential fans are engaged but not yet converted to membership - the clearest upsell pipeline.")
     if "Gender" in cols:
         f_pct = (df["Gender"].str.lower() == "female").sum() / len(df) * 100
         if f_pct < 35:
@@ -845,7 +845,7 @@ def generate_story_pdf(sections, recs) -> bytes:
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 22)
     pdf.set_text_color(20, 20, 20)
-    pdf.cell(0, 14, _pdf_safe("FanIQ — Audience Story"), ln=True)
+    pdf.cell(0, 14, _pdf_safe("FanIQ - Audience Story"), ln=True)
     pdf.set_font("Helvetica", "", 11)
     pdf.set_text_color(100, 100, 100)
     pdf.cell(0, 8, _pdf_safe(f"Generated {TODAY.strftime('%d %B %Y')}"), ln=True)
@@ -930,7 +930,7 @@ def render_sponsorship_intelligence(df: pd.DataFrame):
             gc = df["Gender"].value_counts()
             fig = go.Figure(go.Pie(
                 labels=gc.index, values=gc.values, hole=0.5,
-                marker_colors=["#00E5FF", "#E8FF00", "#7B68EE"],
+                marker_colors=["#3B82F6", "#C8F135", "#8B5CF6"],
                 textinfo="label+percent", textfont_color="#fff",
             ))
             fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
@@ -945,7 +945,7 @@ def render_sponsorship_intelligence(df: pd.DataFrame):
             top_countries = df["Country"].value_counts().head(8)
             fig2 = px.bar(
                 x=top_countries.values, y=top_countries.index, orientation="h",
-                color_discrete_sequence=["#E8FF00"],
+                color_discrete_sequence=["#C8F135"],
                 labels={"x": "Fans", "y": ""},
             )
             fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
@@ -982,7 +982,7 @@ def generate_sponsorship_pdf(pitch_score, female_pct, core_demo_pct, top_market,
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 22)
     pdf.set_text_color(20, 20, 20)
-    pdf.cell(0, 14, _pdf_safe("FanIQ — Sponsorship Intelligence"), ln=True)
+    pdf.cell(0, 14, _pdf_safe("FanIQ - Sponsorship Intelligence"), ln=True)
     pdf.set_font("Helvetica", "", 11)
     pdf.set_text_color(100, 100, 100)
     pdf.cell(0, 8, _pdf_safe(f"Generated {TODAY.strftime('%d %B %Y')}"), ln=True)
@@ -1008,7 +1008,7 @@ def generate_sponsorship_pdf(pitch_score, female_pct, core_demo_pct, top_market,
     for cat, fit, brands, why in SPONSOR_CATEGORIES:
         pdf.set_font("Helvetica", "B", 10)
         pdf.set_text_color(20, 20, 20)
-        pdf.cell(0, 8, _pdf_safe(f"{cat} — Fit: {fit}"), ln=True)
+        pdf.cell(0, 8, _pdf_safe(f"{cat} - Fit: {fit}"), ln=True)
         pdf.set_font("Helvetica", "", 10)
         pdf.set_text_color(60, 60, 60)
         pdf.cell(0, 6, _pdf_safe(f"Example brands: {brands}"), ln=True)
@@ -1079,12 +1079,12 @@ def render_player_influence(df: pd.DataFrame):
     </div>
     """, unsafe_allow_html=True)
 
-    # Bar chart — marketing value ranking
+    # Bar chart - marketing value ranking
     st.markdown('<div class="section-header">Player Commercial Influence Ranking</div>', unsafe_allow_html=True)
     fig = px.bar(
         player_stats.head(15), x="Marketing_Value", y="Favourite_Player",
         orientation="h", color="Marketing_Value",
-        color_continuous_scale=["#1a1a2e", "#E8FF00"],
+        color_continuous_scale=["#1a1a2e", "#C8F135"],
         labels={"Marketing_Value": "Marketing Value Score", "Favourite_Player": ""},
     )
     fig.update_layout(
@@ -1149,7 +1149,7 @@ def main():
             st.session_state["df"] = None
             st.rerun()
 
-    # Show tabs — hybrid schema: fewer than 5 core = only Custom Metrics
+    # Show tabs - hybrid schema: fewer than 5 core = only Custom Metrics
     if len(matched_core) < 5:
         st.warning(f"Only {len(matched_core)} core columns matched. Showing Custom Metrics Explorer only.")
         st.markdown('<div class="section-header">Custom Metrics Explorer</div>', unsafe_allow_html=True)

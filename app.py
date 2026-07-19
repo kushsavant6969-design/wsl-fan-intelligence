@@ -8,7 +8,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, date, timedelta
-import io, random, os
+import io, random, os, time
 from fpdf import FPDF
 from generate_sample import generate_sample_data, generate_template
 
@@ -27,102 +27,161 @@ st.markdown("""
 
 html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
 
-[data-testid="stAppViewContainer"] { background: #080810 !important; }
-[data-testid="stHeader"]           { background: #080810 !important; border-bottom: 1px solid #1a1a2e; }
+[data-testid="stAppViewContainer"] { background: #08080c !important; }
+[data-testid="stHeader"]           { background: #08080c !important; border-bottom: 1px solid #1a1a22; }
 section[data-testid="stSidebar"]   { display: none; }
-.block-container { padding: 0 2rem 2rem !important; max-width: 100% !important; }
+.block-container { padding: 1rem 2.5rem 3rem !important; max-width: 1440px !important; }
 
 /* Tabs */
-[data-testid="stTabs"] > div:first-child { border-bottom: 2px solid #1a1a2e; }
+[data-testid="stTabs"] > div:first-child { border-bottom: 1px solid #23232b; gap: 4px; }
 button[data-baseweb="tab"] {
-    color: #666 !important; font-size: 13px !important; font-weight: 500 !important;
-    padding: 10px 20px !important; border-radius: 6px 6px 0 0 !important;
-    border: none !important; background: transparent !important;
+    color: #8b8b95 !important; font-size: 13px !important; font-weight: 600 !important;
+    padding: 11px 18px !important; border: none !important; background: transparent !important;
 }
-button[data-baseweb="tab"]:hover { color: #E8FF00 !important; }
+button[data-baseweb="tab"]:hover { color: #C8F135 !important; }
 button[data-baseweb="tab"][aria-selected="true"] {
-    color: #E8FF00 !important; border-bottom: 2px solid #E8FF00 !important;
-    background: #0d0d1a !important; font-weight: 700 !important;
+    color: #0a0a0f !important; background: #C8F135 !important;
+    border-radius: 8px 8px 0 0 !important; font-weight: 700 !important;
 }
-[data-testid="stTabsContent"] { padding-top: 1.5rem !important; }
+[data-testid="stTabsContent"] { padding-top: 1.75rem !important; }
 
 /* Inputs */
-[data-testid="stTextInput"] input { background: #0d0d1a !important; color: #fff !important; border: 1px solid #2a2a4a !important; }
-[data-testid="stSelectbox"] > div > div { background: #0d0d1a !important; color: #fff !important; }
+[data-testid="stTextInput"] input, [data-testid="stTextArea"] textarea { background: #101018 !important; color: #e5e7eb !important; border: 1px solid #2a2a34 !important; }
+[data-testid="stSelectbox"] > div > div { background: #101018 !important; color: #e5e7eb !important; }
 
 /* File uploader */
 [data-testid="stFileUploader"] {
-    background: #0d0d1a !important; border: 2px dashed #E8FF00 !important;
-    border-radius: 12px !important; padding: 2rem !important;
+    background: #101018 !important; border: 1.5px dashed #C8F135 !important;
+    border-radius: 14px !important; padding: 2rem !important;
 }
-[data-testid="stFileUploader"] label { color: #fff !important; }
+[data-testid="stFileUploader"] label { color: #e5e7eb !important; }
 
 /* Buttons */
 .stButton > button {
-    background: #E8FF00 !important; color: #080810 !important;
+    background: #C8F135 !important; color: #0a0a0f !important;
     font-weight: 700 !important; border: none !important;
-    border-radius: 8px !important; padding: 10px 24px !important;
+    border-radius: 9px !important; padding: 9px 22px !important; font-size: 13px !important;
+    transition: filter .15s ease !important;
 }
-.stButton > button:hover { background: #00E5FF !important; }
+.stButton > button:hover { filter: brightness(1.08) !important; }
 .stDownloadButton > button {
-    background: #1a1a2e !important; color: #E8FF00 !important;
-    border: 1px solid #E8FF00 !important; font-weight: 600 !important;
-    border-radius: 8px !important;
+    background: #14141c !important; color: #C8F135 !important;
+    border: 1px solid #333f16 !important; font-weight: 600 !important;
+    border-radius: 9px !important;
 }
+
+/* Expander */
+[data-testid="stExpander"] { border: 1px solid #23232b !important; border-radius: 10px !important; background: #0d0d14 !important; }
+[data-testid="stExpander"] summary { color: #b7b9c0 !important; font-size: 13px !important; }
 
 /* KPI cards */
 .kpi-card {
-    background: #0d0d1a; border: 1px solid #2a2a4a; border-radius: 12px;
-    padding: 20px; text-align: center;
+    background: #0d0d14; border: 1px solid #23232b; border-radius: 14px;
+    padding: 24px 22px; height: 150px; display: flex; flex-direction: column; justify-content: center;
 }
-.kpi-value { font-size: 32px; font-weight: 800; color: #E8FF00; }
-.kpi-label { font-size: 12px; color: #888; margin-top: 4px; text-transform: uppercase; letter-spacing: 1px; }
-.kpi-sub   { font-size: 13px; color: #00E5FF; margin-top: 6px; }
+.kpi-value { font-size: 34px; font-weight: 800; color: #f3f4f6; line-height: 1; }
+.kpi-label { font-size: 11px; color: #8b8b95; margin-top: 10px; text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
+.kpi-sub   { font-size: 12px; color: #9ca3af; margin-top: 8px; }
 
-/* Segment cards */
+/* Segment / summary cards */
 .seg-card {
-    background: #0d0d1a; border: 1px solid #2a2a4a; border-radius: 12px;
-    padding: 20px; margin-bottom: 16px;
+    background: #0d0d14; border: 1px solid #23232b; border-radius: 14px;
+    padding: 22px; margin-bottom: 16px;
 }
-.seg-title { font-size: 18px; font-weight: 700; color: #E8FF00; }
-.seg-size  { font-size: 13px; color: #888; }
+.seg-title { font-size: 18px; font-weight: 800; color: #f3f4f6; }
+.seg-size  { font-size: 13px; color: #8b8b95; margin-top: 2px; }
 
 /* Section headers */
 .section-header {
-    font-size: 20px; font-weight: 700; color: #fff;
-    border-left: 4px solid #E8FF00; padding-left: 12px;
-    margin: 28px 0 16px 0;
+    font-size: 15px; font-weight: 700; color: #f3f4f6;
+    text-transform: uppercase; letter-spacing: .06em;
+    margin: 34px 0 16px 0; display: flex; align-items: center; gap: 10px;
 }
+.section-header::before { content: ""; width: 3px; height: 15px; background: #C8F135; border-radius: 2px; display: inline-block; }
 
 /* Story sections */
 .story-section {
-    background: #0d0d1a; border-radius: 12px; padding: 28px;
-    margin-bottom: 20px; border-left: 4px solid #E8FF00;
+    background: #0d0d14; border: 1px solid #23232b; border-radius: 14px; padding: 30px 32px;
+    margin-bottom: 22px;
 }
-.story-title { font-size: 22px; font-weight: 800; color: #E8FF00; margin-bottom: 12px; }
-.story-body  { font-size: 15px; color: #ccc; line-height: 1.8; }
-
-/* Tables */
-[data-testid="stDataFrame"] { border-radius: 8px !important; }
+.story-title { font-size: 19px; font-weight: 800; color: #f3f4f6; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
+.story-body  { font-size: 15px; color: #c3c5cc; line-height: 1.9; }
 
 /* Platform header */
 .platform-header {
-    padding: 24px 0 12px 0;
-    border-bottom: 1px solid #1a1a2e;
-    margin-bottom: 24px;
+    padding: 20px 0 14px 0; border-bottom: 1px solid #1a1a22; margin-bottom: 20px;
 }
-.platform-name { font-size: 28px; font-weight: 800; color: #E8FF00; letter-spacing: -1px; }
-.platform-tag  { font-size: 14px; color: #888; margin-top: 4px; }
+.platform-name { font-size: 26px; font-weight: 800; color: #f3f4f6; letter-spacing: -0.5px; }
+.platform-tag  { font-size: 13.5px; color: #8b8b95; margin-top: 6px; max-width: 820px; line-height: 1.55; }
 
 /* Upload info grid */
 .col-info {
-    background: #0d0d1a; border: 1px solid #2a2a4a; border-radius: 8px;
-    padding: 12px 16px; margin-bottom: 8px;
+    background: #0d0d14; border: 1px solid #23232b; border-radius: 10px;
+    padding: 13px 16px; margin-bottom: 8px;
 }
-.col-name   { font-size: 13px; font-weight: 700; color: #00E5FF; }
-.col-unlock { font-size: 12px; color: #888; margin-top: 2px; }
+.col-name   { font-size: 13px; font-weight: 700; color: #C8F135; }
+.col-unlock { font-size: 12px; color: #8b8b95; margin-top: 2px; }
+
+/* Badges */
+.fiq-badge { display: inline-block; padding: 3px 11px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .02em; line-height: 1.5; white-space: nowrap; }
+
+/* Custom dark tables */
+.fiq-table-wrap { border: 1px solid #2a2a32; border-radius: 12px; overflow: hidden; margin: 6px 0 8px; }
+.fiq-table { width: 100%; border-collapse: collapse; }
+.fiq-table th { background: #2A2A2A; color: #C8F135; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: 12px 16px; text-align: left; white-space: nowrap; }
+.fiq-table td { padding: 11px 16px; font-size: 13px; color: #d1d5db; border: none; }
+.fiq-table tbody tr:nth-child(odd) td { background: #1A1A1A; }
+.fiq-table tbody tr:nth-child(even) td { background: #222222; }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ── UI kit ─────────────────────────────────────────────────────────────────
+BADGE_COLORS = {
+    "green": ("#14351f", "#7ee787"),
+    "amber": ("#3a2c0d", "#f5c451"),
+    "red":   ("#3a1618", "#f78186"),
+    "blue":  ("#122540", "#6ea8fe"),
+    "grey":  ("#26262e", "#a1a1aa"),
+}
+
+
+def badge(text, kind="grey"):
+    bg, fg = BADGE_COLORS.get(kind, BADGE_COLORS["grey"])
+    return f'<span class="fiq-badge" style="background:{bg};color:{fg};">{text}</span>'
+
+
+def confidence_kind(v): return {"High": "green", "Medium": "amber", "Low": "red"}.get(str(v), "grey")
+def effort_kind(v):     return {"Low": "green", "Medium": "amber", "High": "red"}.get(str(v), "grey")
+def fit_kind(v):        return {"HIGH": "green", "MED": "amber", "LOW": "grey"}.get(str(v).upper(), "grey")
+def attention_kind(v):  return {"Growing": "green", "Stable": "blue", "Watchlist": "amber", "Fading": "red"}.get(str(v), "grey")
+
+
+def confidence_badge(v): return badge(v, confidence_kind(v))
+def effort_badge(v):     return badge(v, effort_kind(v))
+def fit_badge(v):        return badge(v, fit_kind(v))
+def attention_badge(v):  return badge(v, attention_kind(v))
+
+
+def trend_arrow_html(arrow):
+    color = {"↑": "#7ee787", "→": "#a1a1aa", "↓": "#f78186"}.get(arrow, "#a1a1aa")
+    return f'<span style="color:{color};font-weight:800;">{arrow}</span>'
+
+
+def html_table(headers, rows):
+    """Render a dark-themed table. Cells may contain HTML (e.g. badges)."""
+    head = "".join(f"<th>{h}</th>" for h in headers)
+    body = "".join("<tr>" + "".join(f"<td>{c}</td>" for c in row) + "</tr>" for row in rows)
+    return (f'<div class="fiq-table-wrap"><table class="fiq-table">'
+            f'<thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>')
+
+
+def kpi_card(value, label, sub_html="", accent="#f3f4f6", highlight=False):
+    ring = "box-shadow:0 0 0 1px #C8F13544;border-color:#3a4718;" if highlight else ""
+    sub = f'<div class="kpi-sub">{sub_html}</div>' if sub_html else ""
+    return (f'<div class="kpi-card" style="{ring}">'
+            f'<div class="kpi-value" style="color:{accent};">{value}</div>'
+            f'<div class="kpi-label">{label}</div>{sub}</div>')
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 TODAY = date(2026, 6, 28)
@@ -490,8 +549,8 @@ CORE_FOR_COMPLETENESS = [
 OPPORTUNITY_META = {
     "VIP":            {"action": "Protect and upsell VIP fans",            "effort": "Low",    "tti": "2-4 weeks",  "recovery": 0.06},
     "High Potential": {"action": "Convert High Potential fans to members", "effort": "Medium", "tti": "4-8 weeks",  "recovery": 0.25},
-    "Regular":        {"action": "Increase Regular fan visit frequency",   "effort": "Low",    "tti": "2-3 weeks",  "recovery": 0.12},
-    "Win Back":       {"action": "Reactivate Win Back fans",               "effort": "Medium", "tti": "3-6 weeks",  "recovery": 0.15},
+    "Regular":        {"action": "Increase Regular fan visit frequency",   "effort": "Low",    "tti": "2-3 weeks",  "recovery": 0.15},
+    "Win Back":       {"action": "Reactivate Win Back fans",               "effort": "Medium", "tti": "3-6 weeks",  "recovery": 0.10},
     "Dormant":        {"action": "Low-cost Dormant reactivation",          "effort": "High",   "tti": "6-12 weeks", "recovery": 0.05},
 }
 
@@ -523,14 +582,23 @@ def confidence_score(df: pd.DataFrame, size: int):
 
 
 def segment_avg_value(df: pd.DataFrame, segment: str) -> float:
+    """Average per-fan commercial value for a segment. Falls back through segment LTV
+    then fanbase averages so revenue cards never collapse to zero."""
     seg = df[df["Segment"] == segment]
     if not len(seg):
         return 0.0
+    val = 0.0
     if "Spend" in df.columns:
-        v = float(pd.to_numeric(seg["Spend"], errors="coerce").fillna(0).mean())
-        if v > 0:
-            return v
-    return float(seg["LTV_Estimate"].mean())
+        val = float(pd.to_numeric(seg["Spend"], errors="coerce").fillna(0).mean())
+    if val <= 0:
+        val = float(seg["LTV_Estimate"].mean())
+    if val <= 0:
+        # segment value near zero — fall back to fanbase averages
+        if "Spend" in df.columns:
+            val = float(pd.to_numeric(df["Spend"], errors="coerce").fillna(0).mean())
+        if val <= 0:
+            val = float(df["LTV_Estimate"].mean())
+    return max(val, 1.0)
 
 
 def channel_cost(channel: str) -> float:
@@ -582,12 +650,25 @@ def build_opportunities(df: pd.DataFrame) -> list:
 
 
 def biggest_risk(df: pd.DataFrame):
-    """Return (segment, ltv_at_risk) for the segment with the highest average churn risk."""
+    """Return (segment, ltv_at_risk) for the segment with the highest average churn risk.
+    Uses a fanbase-average fallback so the value never collapses to zero."""
     seg_churn = df.groupby("Segment")["Churn_Risk"].mean()
     risk_seg = seg_churn.idxmax()
     seg = df[df["Segment"] == risk_seg]
-    ltv_at_risk = float(seg["LTV_Estimate"].sum() * (seg["Churn_Risk"].mean() / 100))
-    return risk_seg, ltv_at_risk
+    churn_factor = float(seg["Churn_Risk"].mean() / 100)
+    at_risk = float(seg["LTV_Estimate"].sum()) * churn_factor
+    if at_risk < 1:
+        at_risk = len(seg) * segment_avg_value(df, risk_seg) * churn_factor
+    return risk_seg, max(at_risk, 1.0)
+
+
+def has_player_data(df: pd.DataFrame) -> bool:
+    """True only if Favourite_Player exists and has real values (not empty / all Unknown)."""
+    if "Favourite_Player" not in df.columns:
+        return False
+    s = df["Favourite_Player"].astype(str).str.strip().str.lower()
+    valid = s[~s.isin(["", "unknown", "nan", "none"])]
+    return len(valid) > 0
 
 
 def generate_executive_brief_pdf(df: pd.DataFrame) -> bytes:
@@ -687,73 +768,66 @@ def render_commercial_outlook(df: pd.DataFrame):
 
     # Top-line summary
     st.markdown(
-        f'<div style="font-size:20px;font-weight:700;color:#fff;line-height:1.5;margin-bottom:6px;">'
-        f'Your fanbase has <span style="color:#C8F135;">{len(priority)} high-priority commercial '
-        f'{"opportunity" if len(priority)==1 else "opportunities"}</span> this week, worth an estimated '
+        f'<div style="font-size:12px;color:#8b8b95;font-weight:700;letter-spacing:.09em;'
+        f'text-transform:uppercase;margin-bottom:10px;">This Week</div>'
+        f'<div style="font-size:23px;font-weight:800;color:#f3f4f6;line-height:1.45;max-width:920px;">'
+        f'Your fanbase has <span style="color:#C8F135;">{len(priority)} high-priority '
+        f'{"opportunity" if len(priority)==1 else "opportunities"}</span>, worth an estimated '
         f'<span style="color:#C8F135;">&pound;{combined:,.0f}</span> in combined revenue.</div>',
         unsafe_allow_html=True)
-    st.markdown('<div style="height:8px;"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="height:24px;"></div>', unsafe_allow_html=True)
 
-    # Four cards
-    c1, c2, c3, c4 = st.columns(4)
+    # Four summary cards — revenue is the hero element, meta is secondary
+    def _card(label, name, hero, accent, meta_html):
+        return (f'<div style="background:#0d0d14;border:1px solid #23232b;border-top:3px solid {accent};'
+                f'border-radius:14px;padding:22px 22px 20px;height:238px;display:flex;flex-direction:column;">'
+                f'<div style="font-size:10.5px;color:#8b8b95;text-transform:uppercase;letter-spacing:.09em;font-weight:700;">{label}</div>'
+                f'<div style="font-size:17px;font-weight:800;color:{accent};margin-top:12px;">{name}</div>'
+                f'<div style="font-size:30px;font-weight:800;color:#f3f4f6;margin-top:auto;line-height:1.05;">{hero}</div>'
+                f'<div style="margin-top:13px;">{meta_html}</div></div>')
+
+    c1, c2, c3, c4 = st.columns(4, gap="medium")
     with c1:
-        st.markdown(f"""
-        <div class="seg-card" style="border-left:4px solid #C8F135;height:210px;">
-            <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Biggest Opportunity</div>
-            <div style="font-size:18px;font-weight:800;color:#C8F135;margin-top:6px;">{biggest['segment']}</div>
-            <div style="font-size:22px;font-weight:800;color:#fff;margin-top:8px;">&pound;{biggest['est_revenue']:,.0f}</div>
-            <div style="font-size:12px;color:#aaa;margin-top:8px;">Confidence: {biggest['confidence']} ({biggest['confidence_pct']}%)</div>
-            <div style="font-size:12px;color:#aaa;">Effort: {biggest['effort']}</div>
-            <div style="font-size:12px;color:#aaa;">Time to impact: {biggest['tti']}</div>
-        </div>""", unsafe_allow_html=True)
+        meta = (f'{confidence_badge(biggest["confidence"])} &nbsp; {effort_badge(biggest["effort"])}'
+                f'<div style="font-size:11.5px;color:#8b8b95;margin-top:10px;">Time to impact: {biggest["tti"]}</div>')
+        st.markdown(_card("Biggest Opportunity", biggest["segment"], f"&pound;{biggest['est_revenue']:,.0f}", "#C8F135", meta), unsafe_allow_html=True)
     with c2:
-        st.markdown(f"""
-        <div class="seg-card" style="border-left:4px solid #EF4444;height:210px;">
-            <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Biggest Risk</div>
-            <div style="font-size:18px;font-weight:800;color:#EF4444;margin-top:6px;">{risk_seg}</div>
-            <div style="font-size:22px;font-weight:800;color:#fff;margin-top:8px;">&pound;{ltv_at_risk:,.0f}</div>
-            <div style="font-size:12px;color:#aaa;margin-top:8px;">Estimated LTV at risk</div>
-            <div style="font-size:12px;color:#aaa;">if no action is taken</div>
-        </div>""", unsafe_allow_html=True)
+        meta = '<div style="font-size:11.5px;color:#8b8b95;margin-top:10px;">Estimated LTV at risk if no action is taken</div>'
+        st.markdown(_card("Biggest Risk", risk_seg, f"&pound;{ltv_at_risk:,.0f}", "#EF4444", meta), unsafe_allow_html=True)
     with c3:
-        st.markdown(f"""
-        <div class="seg-card" style="border-left:4px solid #3B82F6;height:210px;">
-            <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Quick Win</div>
-            <div style="font-size:18px;font-weight:800;color:#3B82F6;margin-top:6px;">{quick['segment']}</div>
-            <div style="font-size:22px;font-weight:800;color:#fff;margin-top:8px;">&pound;{quick['est_revenue']:,.0f}</div>
-            <div style="font-size:12px;color:#aaa;margin-top:8px;">Confidence: {quick['confidence']} ({quick['confidence_pct']}%)</div>
-            <div style="font-size:12px;color:#aaa;">Effort: {quick['effort']}</div>
-        </div>""", unsafe_allow_html=True)
+        meta = (f'{confidence_badge(quick["confidence"])} &nbsp; {effort_badge(quick["effort"])}'
+                f'<div style="font-size:11.5px;color:#8b8b95;margin-top:10px;">Fastest high-confidence action</div>')
+        st.markdown(_card("Quick Win", quick["segment"], f"&pound;{quick['est_revenue']:,.0f}", "#3B82F6", meta), unsafe_allow_html=True)
     with c4:
-        st.markdown(f"""
-        <div class="seg-card" style="border-left:4px solid #8B5CF6;height:210px;">
-            <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Sponsor Opportunity</div>
-            <div style="font-size:18px;font-weight:800;color:#8B5CF6;margin-top:6px;">{sponsor['category']}</div>
-            <div style="font-size:22px;font-weight:800;color:#fff;margin-top:8px;">{sponsor['rating']}%</div>
-            <div style="font-size:12px;color:#aaa;margin-top:8px;">Strategic fit rating</div>
-            <div style="font-size:12px;color:#aaa;">Fit: {sponsor['fit']}</div>
-        </div>""", unsafe_allow_html=True)
+        meta = (f'{fit_badge(sponsor["fit"])}'
+                f'<div style="font-size:11.5px;color:#8b8b95;margin-top:10px;">Strategic fit rating</div>')
+        st.markdown(_card("Sponsor Opportunity", sponsor["category"], f"{sponsor['rating']}%", "#8B5CF6", meta), unsafe_allow_html=True)
 
-    # Prioritisation table
+    # Prioritised opportunities table (dark, badge-enabled)
     st.markdown('<div class="section-header">Prioritised Opportunities</div>', unsafe_allow_html=True)
-    table = pd.DataFrame([{
-        "Opportunity": o["action"],
-        "Est. Revenue": f"£{o['est_revenue']:,.0f}",
-        "Confidence": o["confidence"],
-        "Effort": o["effort"],
-        "Time to Impact": o["tti"],
-    } for o in opps_sorted[:5]])
-    st.dataframe(table, use_container_width=True, hide_index=True)
+    rows = [[
+        f'<span style="color:#e5e7eb;font-weight:600;">{o["action"]}</span>',
+        f'<span style="color:#C8F135;font-weight:700;">&pound;{o["est_revenue"]:,.0f}</span>',
+        confidence_badge(o["confidence"]),
+        effort_badge(o["effort"]),
+        o["tti"],
+    ] for o in opps_sorted[:5]]
+    st.markdown(html_table(["Opportunity", "Est. Revenue", "Confidence", "Effort", "Time to Impact"], rows),
+                unsafe_allow_html=True)
 
-    # Recommended action
+    # Recommended action — executive conclusion of the page
     channel = get_channel_for_segment(df, biggest["segment"])
+    st.markdown('<div style="height:14px;"></div>', unsafe_allow_html=True)
     st.markdown(f"""
-    <div class="story-section" style="border-left:4px solid #C8F135;">
-        <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Recommended Action This Week</div>
-        <div style="font-size:16px;font-weight:800;color:#fff;line-height:1.6;">
-        Launch a targeted {biggest['segment']} campaign via {channel} - it is the single highest-return
-        action available, worth an estimated &pound;{biggest['est_revenue']:,.0f} at {biggest['confidence'].lower()} confidence.
+    <div style="background:linear-gradient(180deg,#141a08,#0d0d14);border:1px solid #333f16;
+                border-left:4px solid #C8F135;border-radius:14px;padding:28px 30px;">
+        <div style="font-size:11px;color:#C8F135;text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:14px;">Recommended Action This Week</div>
+        <div style="font-size:24px;font-weight:800;color:#f3f4f6;line-height:1.35;">Launch a targeted {biggest['segment']} campaign via {channel}.</div>
+        <div style="display:flex;align-items:center;gap:18px;margin:18px 0 14px;flex-wrap:wrap;">
+            <div style="font-size:28px;font-weight:800;color:#C8F135;">&pound;{biggest['est_revenue']:,.0f}</div>
+            <div>{confidence_badge(biggest['confidence'])}</div>
         </div>
+        <div style="font-size:14px;color:#9ca3af;line-height:1.65;max-width:780px;">The single highest-return action available this week, based on segment value, conversion likelihood and the effort required to execute.</div>
     </div>""", unsafe_allow_html=True)
 
 
@@ -824,22 +898,29 @@ def render_fan_dashboard(df: pd.DataFrame):
     # KPI cards
     avg_faqi = df["FAQI"].mean()
     faqi_status = attention_status(avg_faqi)
-    k1, k2, k3, k4, k5 = st.columns(5)
+    avg_comm = df["Commercial_Score"].mean()
+    top_count = seg_counts.iloc[0] if len(seg_counts) else 0
+    fq_color = ATTENTION_COLORS[faqi_status]
+    k1, k2, k3, k4, k5 = st.columns(5, gap="medium")
     with k1:
-        st.markdown(f'<div class="kpi-card"><div class="kpi-value">{len(df):,}</div><div class="kpi-label">Total Fans</div></div>', unsafe_allow_html=True)
+        st.markdown(kpi_card(f"{len(df):,}", "Total Fans"), unsafe_allow_html=True)
     with k2:
-        avg_comm = df["Commercial_Score"].mean()
-        st.markdown(f'<div class="kpi-card"><div class="kpi-value">{avg_comm:.0f}</div><div class="kpi-label">Avg Commercial Score</div><div class="kpi-sub">0–100 percentile</div></div>', unsafe_allow_html=True)
+        st.markdown(kpi_card(f"{avg_comm:.0f}", "Avg Commercial Score", "0-100 percentile"), unsafe_allow_html=True)
     with k3:
-        st.markdown(f'<div class="kpi-card"><div class="kpi-value">{high_churn:,}</div><div class="kpi-label">High Churn Risk</div><div class="kpi-sub">Score ≥ 70</div></div>', unsafe_allow_html=True)
+        st.markdown(kpi_card(f"{high_churn:,}", "High Churn Risk", "Score 70 or higher"), unsafe_allow_html=True)
     with k4:
-        top_count = seg_counts.iloc[0] if len(seg_counts) else 0
-        st.markdown(f'<div class="kpi-card"><div class="kpi-value">{top_count:,}</div><div class="kpi-label">Top Segment</div><div class="kpi-sub">{top_seg}</div></div>', unsafe_allow_html=True)
+        st.markdown(kpi_card(f"{top_count:,}", "Top Segment", str(top_seg)), unsafe_allow_html=True)
     with k5:
-        fq_color = ATTENTION_COLORS[faqi_status]
-        st.markdown(f'<div class="kpi-card"><div class="kpi-value" style="color:{fq_color};">{avg_faqi:.0f}</div><div class="kpi-label">Average FAQI</div><div class="kpi-sub" style="color:{fq_color};">{faqi_status}</div></div>', unsafe_allow_html=True)
+        # FAQI is a proprietary metric — visually distinct with a ring + status badge beside the score
+        st.markdown(
+            f'<div class="kpi-card" style="box-shadow:0 0 0 1px #C8F13544;border-color:#3a4718;">'
+            f'<div style="display:flex;align-items:center;gap:10px;">'
+            f'<div class="kpi-value" style="color:{fq_color};">{avg_faqi:.0f}</div>'
+            f'{attention_badge(faqi_status)}</div>'
+            f'<div class="kpi-label">Average FAQI &middot; Proprietary</div></div>',
+            unsafe_allow_html=True)
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown('<div style="height:8px;"></div>', unsafe_allow_html=True)
 
     # FAQI intelligence layer
     st.markdown('<div class="section-header">Fan Attention (FAQI)</div>', unsafe_allow_html=True)
@@ -871,8 +952,12 @@ def render_fan_dashboard(df: pd.DataFrame):
         ).round(1).reset_index()
         seg_faqi["Status"] = seg_faqi["Avg_FAQI"].apply(attention_status)
         seg_faqi = seg_faqi.sort_values("Avg_FAQI", ascending=False)
-        st.markdown('<div style="font-size:13px;color:#888;margin-bottom:8px;">Attention by segment</div>', unsafe_allow_html=True)
-        st.dataframe(seg_faqi, use_container_width=True, hide_index=True)
+        st.markdown('<div style="font-size:12px;color:#8b8b95;margin-bottom:10px;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">Attention by Segment</div>', unsafe_allow_html=True)
+        rows = [[
+            f'<span style="color:#e5e7eb;font-weight:600;">{r.Segment}</span>',
+            f'{int(r.Fans):,}', f'{r.Avg_FAQI:.0f}', attention_badge(r.Status),
+        ] for r in seg_faqi.itertuples()]
+        st.markdown(html_table(["Segment", "Fans", "Avg FAQI", "Status"], rows), unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -948,17 +1033,27 @@ def render_fan_dashboard(df: pd.DataFrame):
     st.plotly_chart(fig_ltv, use_container_width=True, key="dash_ltv")
 
     # Row 4: Top fans tables
-    t1, t2 = st.columns(2)
+    t1, t2 = st.columns(2, gap="large")
+    id_col = "Fan_ID" if "Fan_ID" in df.columns else df.columns[0]
     with t1:
         st.markdown('<div class="section-header">Top 10 Highest Value Fans</div>', unsafe_allow_html=True)
-        id_col = "Fan_ID" if "Fan_ID" in df.columns else df.columns[0]
-        top_val = df.nlargest(10, "LTV_Estimate")[[id_col, "LTV_Estimate", "Commercial_Score", "Segment"]].reset_index(drop=True)
-        st.dataframe(top_val, use_container_width=True, hide_index=True)
+        top_val = df.nlargest(10, "LTV_Estimate")[[id_col, "LTV_Estimate", "Commercial_Score", "Segment"]]
+        rows = [[
+            f'<span style="color:#e5e7eb;font-weight:600;">{r[0]}</span>',
+            f'<span style="color:#C8F135;font-weight:700;">&pound;{r[1]:,.0f}</span>',
+            f'{r[2]:.0f}', str(r[3]),
+        ] for r in top_val.itertuples(index=False)]
+        st.markdown(html_table([id_col, "Est. LTV", "Commercial", "Segment"], rows), unsafe_allow_html=True)
 
     with t2:
         st.markdown('<div class="section-header">Top 10 Highest Churn Risk</div>', unsafe_allow_html=True)
-        top_churn = df.nlargest(10, "Churn_Risk")[[id_col, "Churn_Risk", "Commercial_Score", "Segment"]].reset_index(drop=True)
-        st.dataframe(top_churn, use_container_width=True, hide_index=True)
+        top_churn = df.nlargest(10, "Churn_Risk")[[id_col, "Churn_Risk", "Commercial_Score", "Segment"]]
+        rows = [[
+            f'<span style="color:#e5e7eb;font-weight:600;">{r[0]}</span>',
+            f'<span style="color:#f78186;font-weight:700;">{r[1]:.0f}</span>',
+            f'{r[2]:.0f}', str(r[3]),
+        ] for r in top_churn.itertuples(index=False)]
+        st.markdown(html_table([id_col, "Churn Risk", "Commercial", "Segment"], rows), unsafe_allow_html=True)
 
 
 # ── Tab 2: Campaign Intelligence ───────────────────────────────────────────
@@ -1061,80 +1156,75 @@ def render_campaign_intelligence(df: pd.DataFrame):
             **cfg,
         })
 
-    # Render brief cards
+    # Render brief cards — commercial tier (revenue/ROI/confidence) leads, brief detail is secondary
+    def _brief_field(lbl, val, val_color="#c3c5cc"):
+        return (f'<div><div style="font-size:10.5px;color:#7c7c86;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">{lbl}</div>'
+                f'<div style="font-size:13px;color:{val_color};margin-top:5px;line-height:1.55;">{val}</div></div>')
+
     for b in briefs_data:
         color = SEGMENT_COLORS.get(b["segment"], "#888")
         pct = b["count"] / len(df) * 100 if len(df) else 0
-        conv_pct = b["conv"] * 100
 
-        st.markdown(f"""
-        <div class="seg-card" style="border-left: 4px solid {color};">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-                <div>
-                    <div class="seg-title" style="color:{color};">{b['segment']}</div>
-                    <div class="seg-size">{b['count']:,} fans · {pct:.1f}% of database</div>
-                </div>
-                <div style="text-align:right;">
-                    <div style="font-size:22px;font-weight:800;color:{color};">{conv_pct:.0f}%</div>
-                    <div style="font-size:11px;color:#888;">Est. conversion</div>
-                </div>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;">
-                <div>
-                    <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Objective</div>
-                    <div style="font-size:13px;color:#ddd;margin-top:4px;">{b['objective']}</div>
-                </div>
-                <div>
-                    <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Channel</div>
-                    <div style="font-size:13px;color:#00E5FF;margin-top:4px;">{b['channel']}</div>
-                </div>
-                <div>
-                    <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Message Angle</div>
-                    <div style="font-size:13px;color:#ddd;margin-top:4px;">{b['angle']}</div>
-                </div>
-                <div>
-                    <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Offer</div>
-                    <div style="font-size:13px;color:#ddd;margin-top:4px;">{b['offer']}</div>
-                </div>
-                <div>
-                    <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Timing</div>
-                    <div style="font-size:13px;color:#ddd;margin-top:4px;">{b['timing']}</div>
-                </div>
-                <div>
-                    <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Success Metric</div>
-                    <div style="font-size:13px;color:#ddd;margin-top:4px;">{b['metric']}</div>
-                </div>
-                <div>
-                    <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Estimated Revenue</div>
-                    <div style="font-size:13px;color:#C8F135;margin-top:4px;font-weight:700;">&pound;{b['est_revenue']:,.0f}</div>
-                </div>
-                <div>
-                    <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Estimated ROI</div>
-                    <div style="font-size:13px;color:#C8F135;margin-top:4px;font-weight:700;">{b['roi']:.1f}x</div>
-                </div>
-                <div>
-                    <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Confidence</div>
-                    <div style="font-size:13px;color:#3B82F6;margin-top:4px;font-weight:700;">{b['confidence']}</div>
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # FAQI context + explainability
+        faqi_html = ""
         if b["faqi"]:
             fq = b["faqi"]
             fq_color = ATTENTION_COLORS[fq["status"]]
-            st.markdown(
-                f'<div style="margin:-8px 0 4px 4px;font-size:13px;color:#bbb;">'
-                f'{b["segment"]} segment average FAQI: '
-                f'<span style="color:{fq_color};font-weight:700;">{fq["avg"]:.0f} ({fq["status"]})</span> - '
-                f'{ATTENTION_MEANING[fq["status"]]}</div>',
-                unsafe_allow_html=True)
-            with st.expander("What drives this score"):
-                for p in fq["pos"]:
+            faqi_html = (
+                f'<div style="margin-top:16px;padding:11px 15px;background:#101018;border-radius:10px;'
+                f'border-left:3px solid {fq_color};font-size:12.5px;color:#b7b9c0;">'
+                f'Segment FAQI <span style="color:{fq_color};font-weight:700;">{fq["avg"]:.0f} ({fq["status"]})</span> '
+                f'&middot; {ATTENTION_MEANING[fq["status"]]}</div>')
+
+        secondary = (
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px 26px;margin-top:20px;'
+            'padding-top:18px;border-top:1px solid #23232b;">'
+            + _brief_field("Objective", b["objective"])
+            + _brief_field("Channel", b["channel"], "#6ea8fe")
+            + _brief_field("Message Angle", b["angle"])
+            + _brief_field("Offer", b["offer"])
+            + _brief_field("Timing", b["timing"])
+            + _brief_field("Success Metric", b["metric"])
+            + '</div>')
+
+        st.markdown(f"""
+        <div class="seg-card" style="border-top:3px solid {color};padding:24px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                <div>
+                    <div class="seg-title" style="color:{color};">{b['segment']}</div>
+                    <div class="seg-size">{b['count']:,} fans &middot; {pct:.1f}% of database</div>
+                </div>
+                <div style="text-align:right;">
+                    <div style="font-size:18px;font-weight:800;color:#e5e7eb;">{b['conv']*100:.0f}%</div>
+                    <div style="font-size:10.5px;color:#7c7c86;text-transform:uppercase;letter-spacing:.05em;">Est. conversion</div>
+                </div>
+            </div>
+            <div style="display:flex;gap:40px;align-items:flex-end;flex-wrap:wrap;margin-top:18px;">
+                <div>
+                    <div style="font-size:10.5px;color:#7c7c86;text-transform:uppercase;letter-spacing:.07em;font-weight:600;">Estimated Revenue</div>
+                    <div style="font-size:28px;font-weight:800;color:#C8F135;margin-top:5px;line-height:1;">&pound;{b['est_revenue']:,.0f}</div>
+                </div>
+                <div>
+                    <div style="font-size:10.5px;color:#7c7c86;text-transform:uppercase;letter-spacing:.07em;font-weight:600;">Estimated ROI</div>
+                    <div style="font-size:28px;font-weight:800;color:#f3f4f6;margin-top:5px;line-height:1;">{b['roi']:.1f}x</div>
+                </div>
+                <div>
+                    <div style="font-size:10.5px;color:#7c7c86;text-transform:uppercase;letter-spacing:.07em;font-weight:600;margin-bottom:9px;">Confidence</div>
+                    {confidence_badge(b['confidence'])}
+                </div>
+            </div>
+            {faqi_html}
+            {secondary}
+        </div>
+        """, unsafe_allow_html=True)
+
+        with st.expander("What drives this score"):
+            if b["faqi"]:
+                for p in b["faqi"]["pos"]:
                     st.markdown(f"- **+** {p}")
-                for nneg in fq["neg"]:
+                for nneg in b["faqi"]["neg"]:
                     st.markdown(f"- **-** {nneg}")
+            else:
+                st.caption("No fans currently in this segment.")
 
     # Download PDF
     st.markdown("<br>", unsafe_allow_html=True)
@@ -1313,25 +1403,29 @@ def render_audience_story(df: pd.DataFrame):
         ("03. What They Are Worth", " ".join(worth_lines)),
         ("04. Where The Opportunity Is", " ".join(opp_lines)),
     ]
-    for title, body in sections:
+    section_icons = ["◉", "↻", "◆", "◈"]
+    for (title, body), icon in zip(sections, section_icons):
         st.markdown(f"""
         <div class="story-section">
-            <div class="story-title">{title}</div>
+            <div class="story-title"><span style="color:#C8F135;font-size:15px;">{icon}</span> {title}</div>
             <div class="story-body">{body}</div>
         </div>
         """, unsafe_allow_html=True)
 
     st.markdown("""
-    <div class="story-section" style="border-left:4px solid #00E5FF;">
-        <div class="story-title" style="color:#00E5FF;">05. What To Do Next</div>
+    <div class="story-section" style="border-top:3px solid #C8F135;">
+        <div class="story-title"><span style="color:#C8F135;font-size:15px;">➜</span> 05. What To Do Next</div>
     """, unsafe_allow_html=True)
     for i, rec in enumerate(recs, 1):
         st.markdown(f"""
-        <div style="margin-bottom:20px;">
-            <div style="font-size:16px;font-weight:700;color:#fff;">{i}. {rec['title']}</div>
-            <div style="font-size:14px;color:#ccc;margin-top:6px;line-height:1.7;">{rec['rationale']}</div>
-            <div style="font-size:13px;color:#00E5FF;margin-top:6px;font-weight:600;">{rec['impact']}</div>
-            <div style="font-size:12px;color:#888;margin-top:4px;">Confidence: <span style="color:#3B82F6;font-weight:600;">{rec['confidence']}</span> &nbsp;·&nbsp; Effort: <span style="color:#C8F135;font-weight:600;">{rec['effort']}</span></div>
+        <div style="margin-bottom:26px;">
+            <div style="font-size:16px;font-weight:800;color:#f3f4f6;">{i}. {rec['title']}</div>
+            <div style="font-size:14px;color:#c3c5cc;margin-top:9px;line-height:1.75;">{rec['rationale']}</div>
+            <div style="font-size:14px;color:#C8F135;margin-top:11px;font-weight:700;">{rec['impact']}</div>
+            <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                <span style="font-size:11px;color:#7c7c86;text-transform:uppercase;letter-spacing:.05em;">Confidence</span>{confidence_badge(rec['confidence'])}
+                <span style="font-size:11px;color:#7c7c86;text-transform:uppercase;letter-spacing:.05em;margin-left:10px;">Effort</span>{effort_badge(rec['effort'])}
+            </div>
         </div>
         """, unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
@@ -1420,18 +1514,18 @@ def render_sponsorship_intelligence(df: pd.DataFrame):
     avg_comm = df["Commercial_Score"].mean()
 
     # KPI cards
-    k1, k2, k3, k4 = st.columns(4)
+    k1, k2, k3, k4 = st.columns(4, gap="medium")
     with k1:
-        gauge_color = "#E8FF00" if pitch_score >= 65 else "#00E5FF" if pitch_score >= 50 else "#FF6B6B"
-        st.markdown(f'<div class="kpi-card"><div class="kpi-value" style="color:{gauge_color};">{pitch_score:.0f}</div><div class="kpi-label">Sponsorship Pitch Score</div><div class="kpi-sub">Benchmark: 58</div></div>', unsafe_allow_html=True)
+        gauge_color = "#C8F135" if pitch_score >= 65 else "#3B82F6" if pitch_score >= 50 else "#EF4444"
+        st.markdown(kpi_card(f"{pitch_score:.0f}", "Sponsorship Pitch Score", "Benchmark: 58", accent=gauge_color), unsafe_allow_html=True)
     with k2:
-        st.markdown(f'<div class="kpi-card"><div class="kpi-value">{female_pct:.0f}%</div><div class="kpi-label">Female Audience</div></div>', unsafe_allow_html=True)
+        st.markdown(kpi_card(f"{female_pct:.0f}%", "Female Audience"), unsafe_allow_html=True)
     with k3:
-        st.markdown(f'<div class="kpi-card"><div class="kpi-value">{core_demo_pct:.0f}%</div><div class="kpi-label">Core Demo 18-35</div></div>', unsafe_allow_html=True)
+        st.markdown(kpi_card(f"{core_demo_pct:.0f}%", "Core Demo 18-35"), unsafe_allow_html=True)
     with k4:
-        st.markdown(f'<div class="kpi-card"><div class="kpi-value">{top_market}</div><div class="kpi-label">Top Market</div></div>', unsafe_allow_html=True)
+        st.markdown(kpi_card(f'<span style="font-size:24px;">{top_market}</span>', "Top Market"), unsafe_allow_html=True)
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
 
     # Charts row
     ch1, ch2 = st.columns(2)
@@ -1474,12 +1568,22 @@ def render_sponsorship_intelligence(df: pd.DataFrame):
         Avg_Engagement=("Engagement_Score_Pct", "mean"),
         Avg_LTV=("LTV_Estimate", "mean"),
     ).round(1).reset_index()
-    st.dataframe(seg_quality, use_container_width=True, hide_index=True)
+    rows = [[
+        f'<span style="color:#e5e7eb;font-weight:600;">{r.Segment}</span>',
+        f'{int(r.Fans):,}', f'{r.Avg_Commercial:.0f}', f'{r.Avg_Engagement:.0f}',
+        f'<span style="color:#C8F135;font-weight:700;">&pound;{r.Avg_LTV:,.0f}</span>',
+    ] for r in seg_quality.itertuples()]
+    st.markdown(html_table(["Segment", "Fans", "Avg Commercial", "Avg Engagement", "Avg LTV"], rows), unsafe_allow_html=True)
 
     # Sponsor category recommendations
     st.markdown('<div class="section-header">Top Sponsor Category Recommendations</div>', unsafe_allow_html=True)
-    spon_df = pd.DataFrame(SPONSOR_CATEGORIES, columns=["Category", "Fit", "Example Brands", "Why It Fits"])
-    st.dataframe(spon_df, use_container_width=True, hide_index=True)
+    rows = [[
+        f'<span style="color:#e5e7eb;font-weight:600;">{cat}</span>',
+        fit_badge(fit),
+        f'<span style="color:#9ca3af;">{brands}</span>',
+        f'<span style="color:#b7b9c0;">{why}</span>',
+    ] for cat, fit, brands, why in SPONSOR_CATEGORIES]
+    st.markdown(html_table(["Category", "Fit", "Example Brands", "Why It Fits"], rows), unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("⬇ Download Sponsorship Deck PDF"):
@@ -1531,16 +1635,20 @@ def generate_sponsorship_pdf(pitch_score, female_pct, core_demo_pct, top_market,
 
 # ── Tab 5: Player Influence ────────────────────────────────────────────────
 def render_player_influence(df: pd.DataFrame):
-    if "Favourite_Player" not in df.columns:
+    if not has_player_data(df):
         st.markdown("""
         <div class="story-section" style="text-align:center;padding:60px;">
-            <div class="story-title">Player Influence Locked</div>
+            <div class="story-title" style="justify-content:center;">Player Influence Locked</div>
             <div class="story-body">Upload data with a <b>Favourite_Player</b> column to unlock Player Intelligence.</div>
         </div>
         """, unsafe_allow_html=True)
         return
 
-    player_stats = df.groupby("Favourite_Player").agg(
+    # Exclude blank / Unknown player values so rankings reflect real players only
+    _pl = df["Favourite_Player"].astype(str).str.strip()
+    valid = df[~_pl.str.lower().isin(["", "unknown", "nan", "none"])]
+
+    player_stats = valid.groupby("Favourite_Player").agg(
         Fan_Count=("Favourite_Player", "count"),
         Avg_Commercial=("Commercial_Score", "mean"),
         Avg_Engagement=("Engagement_Score_Pct", "mean"),
@@ -1565,27 +1673,20 @@ def render_player_influence(df: pd.DataFrame):
 
     # Top player card
     top = player_stats.iloc[0]
+
+    def _pmetric(label, val, color):
+        return (f'<div><div style="font-size:10.5px;color:#8b8b95;text-transform:uppercase;letter-spacing:.07em;font-weight:600;">{label}</div>'
+                f'<div style="font-size:24px;font-weight:800;color:{color};margin-top:6px;">{val}</div></div>')
+
     st.markdown(f"""
-    <div class="seg-card" style="border-left:4px solid #E8FF00;margin-bottom:24px;">
-        <div class="seg-title">⭐ {top['Favourite_Player']}</div>
-        <div class="seg-size">{int(top['Fan_Count']):,} fans · Top Marketing Value Player</div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:16px;">
-            <div>
-                <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Sentiment Lift</div>
-                <div style="font-size:24px;font-weight:800;color:#E8FF00;">+{top['Sentiment_Lift']:.1f}</div>
-            </div>
-            <div>
-                <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Engagement Multiplier</div>
-                <div style="font-size:24px;font-weight:800;color:#00E5FF;">{top['Engagement_Multiplier']:.2f}x</div>
-            </div>
-            <div>
-                <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Merch Index</div>
-                <div style="font-size:24px;font-weight:800;color:#7B68EE;">{int(top['Merch_Index'])}</div>
-            </div>
-            <div>
-                <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Marketing Value</div>
-                <div style="font-size:24px;font-weight:800;color:#00FF88;">{top['Marketing_Value']:.0f}</div>
-            </div>
+    <div class="seg-card" style="border-top:3px solid #C8F135;margin-bottom:24px;padding:26px;">
+        <div class="seg-title">{top['Favourite_Player']}</div>
+        <div class="seg-size">{int(top['Fan_Count']):,} fans &middot; Top Marketing Value Player</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin-top:20px;">
+            {_pmetric("Sentiment Lift", f"+{top['Sentiment_Lift']:.1f}", "#C8F135")}
+            {_pmetric("Engagement Multiplier", f"{top['Engagement_Multiplier']:.2f}x", "#3B82F6")}
+            {_pmetric("Merch Index", f"{int(top['Merch_Index'])}", "#8B5CF6")}
+            {_pmetric("Marketing Value", f"{top['Marketing_Value']:.0f}", "#C8F135")}
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -1607,9 +1708,18 @@ def render_player_influence(df: pd.DataFrame):
 
     # Full table
     st.markdown('<div class="section-header">Full Player Sentiment Ranking</div>', unsafe_allow_html=True)
-    display_cols = ["Favourite_Player", "Fan_Count", "Marketing_Value", "Sentiment_Lift",
-                    "Engagement_Multiplier", "Merch_Index", "Avg_LTV"]
-    st.dataframe(player_stats[display_cols], use_container_width=True, hide_index=True)
+    rows = [[
+        f'<span style="color:#e5e7eb;font-weight:600;">{r.Favourite_Player}</span>',
+        f'{int(r.Fan_Count):,}',
+        f'<span style="color:#C8F135;font-weight:700;">{r.Marketing_Value:.0f}</span>',
+        f'{r.Sentiment_Lift:+.1f}',
+        f'{r.Engagement_Multiplier:.2f}x',
+        f'{int(r.Merch_Index)}',
+        f'&pound;{r.Avg_LTV:,.0f}',
+    ] for r in player_stats.head(20).itertuples()]
+    st.markdown(html_table(
+        ["Player", "Fans", "Marketing Value", "Sentiment Lift", "Eng. Multiplier", "Merch Index", "Avg LTV"],
+        rows), unsafe_allow_html=True)
 
 
 # ── Main App ───────────────────────────────────────────────────────────────
@@ -1625,14 +1735,24 @@ def main():
         render_upload_screen()
         return
 
-    # Process data once
+    # Process data once — with a brief native analysis screen
     if st.session_state["df"] is None:
         raw = st.session_state["df_raw"]
-        mapping = fuzzy_map_columns(raw)
-        df = remap_df(raw, mapping)
-        matched_core = [c for c in ["Fan_ID","Age","Gender","Last_Attended","Tickets_Purchased",
-                                     "Spend","Membership_Type","Engagement_Score"] if c in df.columns]
-        df = compute_scores(df)
+        with st.status("Analysing your fanbase...", expanded=True) as status:
+            st.write("Mapping uploaded fan data...")
+            mapping = fuzzy_map_columns(raw)
+            df = remap_df(raw, mapping)
+            matched_core = [c for c in ["Fan_ID","Age","Gender","Last_Attended","Tickets_Purchased",
+                                         "Spend","Membership_Type","Engagement_Score"] if c in df.columns]
+            time.sleep(0.5)
+            st.write("Calculating FAQI scores...")
+            df = compute_scores(df)
+            time.sleep(0.5)
+            st.write("Identifying commercial opportunities...")
+            time.sleep(0.5)
+            st.write("Preparing Commercial Outlook...")
+            time.sleep(0.5)
+            status.update(label="Analysis complete", state="complete", expanded=False)
         st.session_state["df"] = df
         st.session_state["mapping"] = mapping
         st.session_state["matched_core"] = matched_core
@@ -1652,8 +1772,8 @@ def main():
     # Header row: mapped columns info + Executive Brief + reset
     h1, h2, h3 = st.columns([4, 1, 1])
     with h1:
-        mapped_str = " · ".join(f"<span style='color:#00E5FF'>{k}</span>" for k in mapping.keys())
-        st.markdown(f'<p style="font-size:12px;color:#666;">{len(df):,} fans · Mapped: {mapped_str}</p>', unsafe_allow_html=True)
+        mapped_str = " · ".join(f"<span style='color:#8fae5a'>{k}</span>" for k in mapping.keys())
+        st.markdown(f'<p style="font-size:12px;color:#7c7c86;margin-top:4px;">{len(df):,} fans · Mapped: {mapped_str}</p>', unsafe_allow_html=True)
     with h2:
         if st.button("Executive Brief"):
             st.session_state["exec_brief_pdf"] = generate_executive_brief_pdf(df)
@@ -1676,7 +1796,7 @@ def main():
         st.dataframe(df, use_container_width=True)
         return
 
-    has_player = "Favourite_Player" in df.columns
+    has_player = has_player_data(df)
 
     if has_player:
         tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs([

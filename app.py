@@ -773,7 +773,7 @@ def render_commercial_outlook(df: pd.DataFrame):
         f'<div style="font-size:23px;font-weight:800;color:#f3f4f6;line-height:1.45;max-width:920px;">'
         f'Your fanbase has <span style="color:#C8F135;">{len(priority)} high-priority '
         f'{"opportunity" if len(priority)==1 else "opportunities"}</span>, worth an estimated '
-        f'<span style="color:#C8F135;">&pound;{combined:,.0f}</span> in combined revenue.</div>',
+        f'<span style="color:#C8F135;">+&pound;{combined:,.0f}</span> in recoverable revenue upside.</div>',
         unsafe_allow_html=True)
     st.markdown('<div style="height:24px;"></div>', unsafe_allow_html=True)
 
@@ -789,15 +789,15 @@ def render_commercial_outlook(df: pd.DataFrame):
     c1, c2, c3, c4 = st.columns(4, gap="medium")
     with c1:
         meta = (f'{confidence_badge(biggest["confidence"])} &nbsp; {effort_badge(biggest["effort"])}'
-                f'<div style="font-size:11.5px;color:#8b8b95;margin-top:10px;">Time to impact: {biggest["tti"]}</div>')
-        st.markdown(_card("Biggest Opportunity", biggest["segment"], f"&pound;{biggest['est_revenue']:,.0f}", "#C8F135", meta), unsafe_allow_html=True)
+                f'<div style="font-size:11.5px;color:#8b8b95;margin-top:10px;">Recoverable upside &middot; {biggest["tti"]} to impact</div>')
+        st.markdown(_card("Biggest Opportunity", biggest["segment"], f"+&pound;{biggest['est_revenue']:,.0f}", "#C8F135", meta), unsafe_allow_html=True)
     with c2:
-        meta = '<div style="font-size:11.5px;color:#8b8b95;margin-top:10px;">Estimated LTV at risk if no action is taken</div>'
+        meta = '<div style="font-size:11.5px;color:#8b8b95;margin-top:10px;">Lifetime value at risk if no action is taken</div>'
         st.markdown(_card("Biggest Risk", risk_seg, f"&pound;{ltv_at_risk:,.0f}", "#EF4444", meta), unsafe_allow_html=True)
     with c3:
         meta = (f'{confidence_badge(quick["confidence"])} &nbsp; {effort_badge(quick["effort"])}'
-                f'<div style="font-size:11.5px;color:#8b8b95;margin-top:10px;">Fastest high-confidence action</div>')
-        st.markdown(_card("Quick Win", quick["segment"], f"&pound;{quick['est_revenue']:,.0f}", "#3B82F6", meta), unsafe_allow_html=True)
+                f'<div style="font-size:11.5px;color:#8b8b95;margin-top:10px;">Recoverable upside &middot; fastest high-confidence action</div>')
+        st.markdown(_card("Quick Win", quick["segment"], f"+&pound;{quick['est_revenue']:,.0f}", "#3B82F6", meta), unsafe_allow_html=True)
     with c4:
         meta = (f'{fit_badge(sponsor["fit"])}'
                 f'<div style="font-size:11.5px;color:#8b8b95;margin-top:10px;">Strategic fit rating</div>')
@@ -807,12 +807,12 @@ def render_commercial_outlook(df: pd.DataFrame):
     st.markdown('<div class="section-header">Prioritised Opportunities</div>', unsafe_allow_html=True)
     rows = [[
         f'<span style="color:#e5e7eb;font-weight:600;">{o["action"]}</span>',
-        f'<span style="color:#C8F135;font-weight:700;">&pound;{o["est_revenue"]:,.0f}</span>',
+        f'<span style="color:#C8F135;font-weight:700;">+&pound;{o["est_revenue"]:,.0f}</span>',
         confidence_badge(o["confidence"]),
         effort_badge(o["effort"]),
         o["tti"],
     ] for o in opps_sorted[:5]]
-    st.markdown(html_table(["Opportunity", "Est. Revenue", "Confidence", "Effort", "Time to Impact"], rows),
+    st.markdown(html_table(["Opportunity", "Revenue Upside", "Confidence", "Effort", "Time to Impact"], rows),
                 unsafe_allow_html=True)
 
     # Recommended action — executive conclusion of the page
@@ -824,7 +824,7 @@ def render_commercial_outlook(df: pd.DataFrame):
         <div style="font-size:11px;color:#C8F135;text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:14px;">Recommended Action This Week</div>
         <div style="font-size:24px;font-weight:800;color:#f3f4f6;line-height:1.35;">Launch a targeted {biggest['segment']} campaign via {channel}.</div>
         <div style="display:flex;align-items:center;gap:18px;margin:18px 0 14px;flex-wrap:wrap;">
-            <div style="font-size:28px;font-weight:800;color:#C8F135;">&pound;{biggest['est_revenue']:,.0f}</div>
+            <div style="font-size:28px;font-weight:800;color:#C8F135;">+&pound;{biggest['est_revenue']:,.0f} <span style="font-size:13px;font-weight:600;color:#8b8b95;">upside</span></div>
             <div>{confidence_badge(biggest['confidence'])}</div>
         </div>
         <div style="font-size:14px;color:#9ca3af;line-height:1.65;max-width:780px;">The single highest-return action available this week, based on segment value, conversion likelihood and the effort required to execute.</div>
@@ -907,7 +907,7 @@ def render_fan_dashboard(df: pd.DataFrame):
     with k2:
         st.markdown(kpi_card(f"{avg_comm:.0f}", "Avg Commercial Score", "0-100 percentile"), unsafe_allow_html=True)
     with k3:
-        st.markdown(kpi_card(f"{high_churn:,}", "High Churn Risk", "Score 70 or higher"), unsafe_allow_html=True)
+        st.markdown(kpi_card(f"{high_churn:,}", "Fans at Churn Risk", "Churn score 70+ across all segments"), unsafe_allow_html=True)
     with k4:
         st.markdown(kpi_card(f"{top_count:,}", "Top Segment", str(top_seg)), unsafe_allow_html=True)
     with k5:
@@ -942,10 +942,14 @@ def render_fan_dashboard(df: pd.DataFrame):
         comp_avg = {k: float(df[k].mean()) for k, _, _ in FAQI_COMPONENTS}
         pos, neg = faqi_driver_breakdown(comp_avg)
         with st.expander("What drives this score"):
+            st.markdown("**Top contributors**")
             for p in pos:
-                st.markdown(f"- **+** {p}")
+                st.markdown(f"- ▲ {p}")
             for nneg in neg:
-                st.markdown(f"- **-** {nneg}")
+                st.markdown(f"- ▼ {nneg}")
+            st.markdown("**Component breakdown** (each scored 0-100, then weighted)")
+            comp_rows = [[name, f"{int(w * 100)}%", f"{comp_avg[k]:.0f}"] for k, name, w in FAQI_COMPONENTS]
+            st.markdown(html_table(["Component", "Weight", "Avg Score"], comp_rows), unsafe_allow_html=True)
     with fq2:
         seg_faqi = df.groupby("Segment").agg(
             Fans=("Segment", "count"), Avg_FAQI=("FAQI", "mean"),
@@ -983,12 +987,15 @@ def render_fan_dashboard(df: pd.DataFrame):
     with c2:
         st.markdown('<div class="section-header">Fan Journey Funnel</div>', unsafe_allow_html=True)
         stage_labels = {1: "Awareness", 2: "Casual", 3: "Regular", 4: "Committed", 5: "Advocate"}
-        stage_counts = df["Journey_Stage"].value_counts().sort_index()
+        total_fans = len(df)
+        # Cumulative funnel: fans who have reached AT LEAST each stage. This is monotonic and
+        # the first value equals the fanbase size, so "percent" can never divide by zero (no Infinity%).
+        cum_counts = [int((df["Journey_Stage"] >= i).sum()) for i in range(1, 6)]
         stages = [stage_labels[i] for i in range(1, 6)]
-        counts = [stage_counts.get(i, 0) for i in range(1, 6)]
+        pct_labels = [f"{(c / total_fans * 100):.0f}%" if total_fans else "0%" for c in cum_counts]
         fig2 = go.Figure(go.Funnel(
-            y=stages, x=counts,
-            textinfo="value+percent initial",
+            y=stages, x=cum_counts,
+            text=pct_labels, textinfo="value+text",
             marker_color=["#6B7280", "#8B5CF6", "#3B82F6", "#9FC93B", "#C8F135"],
         ))
         fig2.update_layout(
@@ -996,6 +1003,7 @@ def render_fan_dashboard(df: pd.DataFrame):
             font_color="#fff", margin=dict(t=20, b=20, l=120, r=20), height=320,
         )
         st.plotly_chart(fig2, use_container_width=True, key="dash_funnel")
+        st.caption("Share of fans who have reached at least each journey stage (cumulative).")
 
     # Row 2: Score distributions
     st.markdown('<div class="section-header">Score Distributions</div>', unsafe_allow_html=True)
@@ -1022,15 +1030,20 @@ def render_fan_dashboard(df: pd.DataFrame):
 
     # Row 3: LTV distribution
     st.markdown('<div class="section-header">Fan LTV Distribution</div>', unsafe_allow_html=True)
-    fig_ltv = px.histogram(df, x="LTV_Estimate", nbins=30,
+    p95 = float(df["LTV_Estimate"].quantile(0.95))
+    max_ltv = float(df["LTV_Estimate"].max())
+    n_outliers = int((df["LTV_Estimate"] > p95).sum())
+    fig_ltv = px.histogram(df, x="LTV_Estimate", nbins=40,
                            color_discrete_sequence=["#C8F135"],
-                           labels={"LTV_Estimate": "Estimated LTV"})
+                           labels={"LTV_Estimate": "Estimated LTV (GBP)"})
     fig_ltv.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font_color="#fff", height=240, margin=dict(t=10, b=40, l=60, r=20),
-        showlegend=False,
+        showlegend=False, xaxis=dict(range=[0, p95] if p95 > 0 else None),
     )
     st.plotly_chart(fig_ltv, use_container_width=True, key="dash_ltv")
+    st.caption(f"X-axis capped at the 95th percentile (£{p95:,.0f}) for readability. "
+               f"{n_outliers} fans fall above this, up to £{max_ltv:,.0f}. Underlying values are unchanged.")
 
     # Row 4: Top fans tables
     t1, t2 = st.columns(2, gap="large")
@@ -1219,10 +1232,11 @@ def render_campaign_intelligence(df: pd.DataFrame):
 
         with st.expander("What drives this score"):
             if b["faqi"]:
+                st.markdown("**Top contributors**")
                 for p in b["faqi"]["pos"]:
-                    st.markdown(f"- **+** {p}")
+                    st.markdown(f"- ▲ {p}")
                 for nneg in b["faqi"]["neg"]:
-                    st.markdown(f"- **-** {nneg}")
+                    st.markdown(f"- ▼ {nneg}")
             else:
                 st.caption("No fans currently in this segment.")
 
@@ -1239,15 +1253,27 @@ def render_campaign_intelligence(df: pd.DataFrame):
     sel_seg = st.selectbox("Select segment", seg_order, key="camp_gen_seg")
     b = next(x for x in briefs_data if x["segment"] == sel_seg)
 
+    # Streamlit retains widget state by key, so changing the `value` argument alone does NOT
+    # refresh the fields when the segment changes. Explicitly reload the selected segment's
+    # brief into session_state whenever the selection changes, so fields always match the segment.
+    cg_defaults = {
+        "cg_obj": b["objective"], "cg_angle": b["angle"], "cg_offer": b["offer"],
+        "cg_channel": b["channel"], "cg_timing": b["timing"], "cg_metric": b["metric"],
+    }
+    if st.session_state.get("cg_last_seg") != sel_seg:
+        for _k, _v in cg_defaults.items():
+            st.session_state[_k] = _v
+        st.session_state["cg_last_seg"] = sel_seg
+
     col_a, col_b = st.columns(2)
     with col_a:
-        custom_obj = st.text_area("Objective", b["objective"], key="cg_obj")
-        custom_angle = st.text_area("Message Angle", b["angle"], key="cg_angle")
-        custom_offer = st.text_area("Offer", b["offer"], key="cg_offer")
+        custom_obj = st.text_area("Objective", key="cg_obj")
+        custom_angle = st.text_area("Message Angle", key="cg_angle")
+        custom_offer = st.text_area("Offer", key="cg_offer")
     with col_b:
-        custom_channel = st.text_input("Channel", b["channel"], key="cg_channel")
-        custom_timing = st.text_area("Timing", b["timing"], key="cg_timing")
-        custom_metric = st.text_area("Success Metric", b["metric"], key="cg_metric")
+        custom_channel = st.text_input("Channel", key="cg_channel")
+        custom_timing = st.text_area("Timing", key="cg_timing")
+        custom_metric = st.text_area("Success Metric", key="cg_metric")
 
     if st.button("⬇ Download Custom Brief PDF"):
         custom_brief = [{
@@ -1329,7 +1355,7 @@ def render_audience_story(df: pd.DataFrame):
     beh_lines = []
     if "Tickets_Purchased" in cols:
         avg_tix = df["Tickets_Purchased"].mean()
-        beh_lines.append(f"Fans purchase {avg_tix:.1f} tickets on average per season.")
+        beh_lines.append(f"Fans purchase {avg_tix:.1f} tickets on average.")
     if "Spend" in cols:
         avg_spend = df["Spend"].mean()
         beh_lines.append(f"Average spend per fan is £{avg_spend:,.0f}.")
@@ -1366,14 +1392,14 @@ def render_audience_story(df: pd.DataFrame):
     if "Gender" in cols:
         f_pct = (df["Gender"].str.lower() == "female").sum() / len(df) * 100
         if f_pct < 35:
-            opp_lines.append(f"Female representation at {f_pct:.0f}% is below industry benchmark of 40%. A targeted female fan acquisition campaign is recommended.")
+            opp_lines.append(f"Female fans make up {f_pct:.0f}% of the database. A dedicated female fan acquisition campaign is one option to broaden the commercial base.")
 
     # Section 5: What To Do Next
     vip_count = int((df["Segment"] == "VIP").sum())
     recs = [
         {
             "title": "Reactivate Win Back segment immediately",
-            "rationale": f"{win_back_count:,} fans who have spent before are showing churn signals. A targeted two-for-one ticket offer sent via their preferred channel this week is projected to recover 12-18% of this group.",
+            "rationale": f"{win_back_count:,} fans who have spent before are showing churn signals. A targeted two-for-one ticket offer sent via their preferred channel this week is the most direct route to recovering a meaningful share of this group.",
             "impact": f"Estimated revenue recovery: £{win_back_count * avg_ltv * 0.15:,.0f}",
             "confidence": confidence_score(df, win_back_count)[0],
             "effort": OPPORTUNITY_META["Win Back"]["effort"],
@@ -1412,23 +1438,23 @@ def render_audience_story(df: pd.DataFrame):
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("""
-    <div class="story-section" style="border-top:3px solid #C8F135;">
-        <div class="story-title"><span style="color:#C8F135;font-size:15px;">➜</span> 05. What To Do Next</div>
-    """, unsafe_allow_html=True)
+    recs_html = ""
     for i, rec in enumerate(recs, 1):
-        st.markdown(f"""
-        <div style="margin-bottom:26px;">
-            <div style="font-size:16px;font-weight:800;color:#f3f4f6;">{i}. {rec['title']}</div>
-            <div style="font-size:14px;color:#c3c5cc;margin-top:9px;line-height:1.75;">{rec['rationale']}</div>
-            <div style="font-size:14px;color:#C8F135;margin-top:11px;font-weight:700;">{rec['impact']}</div>
-            <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-                <span style="font-size:11px;color:#7c7c86;text-transform:uppercase;letter-spacing:.05em;">Confidence</span>{confidence_badge(rec['confidence'])}
-                <span style="font-size:11px;color:#7c7c86;text-transform:uppercase;letter-spacing:.05em;margin-left:10px;">Effort</span>{effort_badge(rec['effort'])}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+        recs_html += (
+            f'<div style="margin-bottom:26px;">'
+            f'<div style="font-size:16px;font-weight:800;color:#f3f4f6;">{i}. {rec["title"]}</div>'
+            f'<div style="font-size:14px;color:#c3c5cc;margin-top:9px;line-height:1.75;">{rec["rationale"]}</div>'
+            f'<div style="font-size:14px;color:#C8F135;margin-top:11px;font-weight:700;">{rec["impact"]}</div>'
+            f'<div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+            f'<span style="font-size:11px;color:#7c7c86;text-transform:uppercase;letter-spacing:.05em;">Confidence</span>{confidence_badge(rec["confidence"])}'
+            f'<span style="font-size:11px;color:#7c7c86;text-transform:uppercase;letter-spacing:.05em;margin-left:10px;">Effort</span>{effort_badge(rec["effort"])}'
+            f'</div></div>')
+    # Single markdown call so the recommendations render INSIDE the styled section box
+    st.markdown(
+        f'<div class="story-section" style="border-top:3px solid #C8F135;">'
+        f'<div class="story-title"><span style="color:#C8F135;font-size:15px;">➜</span> 05. What To Do Next</div>'
+        f'{recs_html}</div>',
+        unsafe_allow_html=True)
 
     # Download PDF
     st.markdown("<br>", unsafe_allow_html=True)
@@ -1517,7 +1543,7 @@ def render_sponsorship_intelligence(df: pd.DataFrame):
     k1, k2, k3, k4 = st.columns(4, gap="medium")
     with k1:
         gauge_color = "#C8F135" if pitch_score >= 65 else "#3B82F6" if pitch_score >= 50 else "#EF4444"
-        st.markdown(kpi_card(f"{pitch_score:.0f}", "Sponsorship Pitch Score", "Benchmark: 58", accent=gauge_color), unsafe_allow_html=True)
+        st.markdown(kpi_card(f"{pitch_score:.0f}", "Sponsorship Pitch Index", "0-100 composite of your data", accent=gauge_color), unsafe_allow_html=True)
     with k2:
         st.markdown(kpi_card(f"{female_pct:.0f}%", "Female Audience"), unsafe_allow_html=True)
     with k3:
@@ -1584,6 +1610,8 @@ def render_sponsorship_intelligence(df: pd.DataFrame):
         f'<span style="color:#b7b9c0;">{why}</span>',
     ] for cat, fit, brands, why in SPONSOR_CATEGORIES]
     st.markdown(html_table(["Category", "Fit", "Example Brands", "Why It Fits"], rows), unsafe_allow_html=True)
+    st.caption("Category fit is indicative guidance based on typical sports-fan demographics, "
+               "not a per-fan calculation from your upload. Use the audience metrics above to validate.")
 
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("⬇ Download Sponsorship Deck PDF"):
@@ -1608,7 +1636,7 @@ def generate_sponsorship_pdf(pitch_score, female_pct, core_demo_pct, top_market,
     pdf.cell(0, 10, "Key Metrics", ln=True)
     pdf.set_font("Helvetica", "", 10)
     for label, val in [
-        ("Sponsorship Pitch Score", f"{pitch_score:.0f} / 100 (benchmark: 58)"),
+        ("Sponsorship Pitch Index", f"{pitch_score:.0f} / 100 (composite index)"),
         ("Female Audience", f"{female_pct:.0f}%"),
         ("Core Demo 18-35", f"{core_demo_pct:.0f}%"),
         ("Top Market", str(top_market)),

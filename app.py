@@ -155,12 +155,16 @@ def confidence_kind(v): return {"High": "green", "Medium": "amber", "Low": "red"
 def effort_kind(v):     return {"Low": "green", "Medium": "amber", "High": "red"}.get(str(v), "grey")
 def fit_kind(v):        return {"HIGH": "green", "MED": "amber", "LOW": "grey"}.get(str(v).upper(), "grey")
 def attention_kind(v):  return {"Growing": "green", "Stable": "blue", "Watchlist": "amber", "Fading": "red"}.get(str(v), "grey")
+def fcrs_band_kind(v):  return {"Conversion Ready": "green", "Building": "blue", "Passive": "grey"}.get(str(v), "grey")
+def coverage_kind(v):   return {"Full": "green", "Standard": "blue", "Limited": "amber", "Minimal": "red"}.get(str(v), "grey")
 
 
 def confidence_badge(v): return badge(v, confidence_kind(v))
 def effort_badge(v):     return badge(v, effort_kind(v))
 def fit_badge(v):        return badge(v, fit_kind(v))
 def attention_badge(v):  return badge(v, attention_kind(v))
+def fcrs_band_badge(v):  return badge(v, fcrs_band_kind(v))
+def coverage_badge(v):   return badge(v, coverage_kind(v))
 
 
 def trend_arrow_html(arrow):
@@ -197,7 +201,7 @@ CORE_COLUMNS = {
     "Engagement_Score": "Unlocks Engagement Index",
     "Channel_Preference":"Unlocks Campaign Intelligence tab",
     "Country":          "Unlocks Geographic Fan Analysis",
-    "Favourite_Player": "Unlocks Player Influence tab (gated)",
+    "Favourite_Player": "Optional context column",
 }
 
 COLUMN_ALIASES = {
@@ -399,6 +403,7 @@ def compute_scores(df: pd.DataFrame) -> pd.DataFrame:
     df["Journey_Stage"] = df.apply(journey_stage, axis=1)
 
     df = compute_faqi(df)
+    df = compute_fcrs(df)
 
     return df
 
@@ -539,6 +544,296 @@ def segment_faqi_summary(df: pd.DataFrame, segment: str):
     return {"avg": avg, "status": attention_status(avg), "pos": pos, "neg": neg}
 
 
+# ── FCRS: Fan Commercial Readiness Score ───────────────────────────────────
+# Adaptive composite (0-100). Uses whatever columns exist; weights of any
+# component that cannot be calculated are redistributed proportionally.
+FCRS_BAND_COLORS = {
+    "Conversion Ready": "#C8F135",  # Primary
+    "Building":         "#3B82F6",  # Secondary
+    "Passive":          "#6B7280",  # Neutral
+}
+
+# (sub-score column, label, base weight)
+FCRS_SUBS = [
+    ("FCRS_Act",   "Commercial Activation", 0.35),
+    ("FCRS_Loy",   "Loyalty Depth",         0.30),
+    ("FCRS_Ghost", "Ghost Risk (inverted)", 0.20),
+    ("FCRS_Prox",  "Membership Proximity",  0.15),
+]
+
+# Plain-language drivers, keyed by the FCRS contribution field (up phrase, down phrase)
+FCRS_DRIVER_TEXT = {
+    "FCRS_Act":   ("Actively clicking and reading content", "Little active engagement with content"),
+    "FCRS_Loy":   ("Committed across membership and purchases", "Shallow commercial commitment so far"),
+    "FCRS_Ghost": ("Engagement looks genuine, not ghosting", "Opens a lot but never clicks or buys"),
+    "FCRS_Prox":  ("Close to the next membership tier", "Far from the next membership tier"),
+}
+
+_PAID_TIERS = ["season ticket", "gold", "premium", "platinum", "paid membership", "silver"]
+_ENTRY_TIERS = ["spurs id", "bronze", "associate", "full member"]
+
+
+def _find_col(df: pd.DataFrame, *names):
+    lower = {c.lower(): c for c in df.columns}
+    for nm in names:
+        if nm.lower() in lower:
+            return lower[nm.lower()]
+    return None
+
+
+def _as_num(df, col):
+    return pd.to_numeric(df[col], errors="coerce").fillna(0) if col else None
+
+
+def _as_bool(df, col):
+    if not col:
+        return None
+    return df[col].astype(str).str.strip().str.lower().isin(["true", "1", "yes", "y", "t"])
+
+
+def _membership_tier_score(series: pd.Series) -> pd.Series:
+    s = series.astype(str).str.strip().str.lower()
+    out = pd.Series(0.0, index=series.index)
+    out = out.mask(s.isin(_ENTRY_TIERS), 33.0)
+    out = out.mask(s.isin(["paid membership", "silver", "full member"]), 66.0)
+    out = out.mask(s.isin(["season ticket", "gold", "premium", "platinum", "vip", "life member"]), 100.0)
+    return out
+
+
+def fcrs_band(score: float) -> str:
+    if score >= 70: return "Conversion Ready"
+    if score >= 40: return "Building"
+    return "Passive"
+
+
+def fcrs_coverage_label(n: int) -> str:
+    return {4: "Full", 3: "Standard", 2: "Limited", 1: "Minimal"}.get(n, "Minimal")
+
+
+def fcrs_confidence_label(n: int) -> str:
+    if n >= 3: return "High"
+    if n == 2: return "Medium"
+    return "Low"
+
+
+def compute_fcrs(df: pd.DataFrame) -> pd.DataFrame:
+    idx = df.index
+
+    # Locate columns (case-insensitive; FCRS-specific columns pass through unmapped)
+    c_eclick = _find_col(df, "EMAIL_COUNTCLICKS")
+    c_eopen = _find_col(df, "EMAIL_COUNTOPENS")
+    c_art = _find_col(df, "NOARTICLES")
+    c_inclick = _find_col(df, "INAPP_COUNTCLICKS")
+    c_inopen = _find_col(df, "INAPP_COUNTOPENS")
+    c_camp = _find_col(df, "EMAIL_DISTINCTCAMPAIGNS")
+    c_ptik = _find_col(df, "PURCHASEDTICKETING")
+    c_pmem = _find_col(df, "PURCHASEDMEMBERSHIPS")
+    c_pret = _find_col(df, "PURCHASEDRETAIL")
+    c_mem = _find_col(df, "MEMBERSHIP_CATEGORY", "Membership_Type")
+    c_tik = _find_col(df, "Tickets_Purchased")
+    c_spend = _find_col(df, "Spend")
+    c_eng = _find_col(df, "Engagement_Score")
+
+    eclick, eopen, art = _as_num(df, c_eclick), _as_num(df, c_eopen), _as_num(df, c_art)
+    inclick, inopen, camp = _as_num(df, c_inclick), _as_num(df, c_inopen), _as_num(df, c_camp)
+    tik, spend, eng = _as_num(df, c_tik), _as_num(df, c_spend), _as_num(df, c_eng)
+    ptik, pmem, pret = _as_bool(df, c_ptik), _as_bool(df, c_pmem), _as_bool(df, c_pret)
+
+    # Purchase proxies when explicit purchase flags are absent
+    has_tik = ptik if ptik is not None else ((tik > 0) if tik is not None else None)
+    has_ret = pret if pret is not None else ((spend > 0) if spend is not None else None)
+    any_purchase = None
+    for p in [ptik, pmem, pret, (tik > 0) if tik is not None else None, (spend > 0) if spend is not None else None]:
+        if p is not None:
+            any_purchase = p if any_purchase is None else (any_purchase | p)
+
+    # ── Component 1: Commercial Activation ─────────────────────────────────
+    act_parts, act_w = [], []
+    if c_eclick is not None:  # email click behaviour (weight 0.30)
+        em = pd.Series(0.0, index=idx)
+        em = em.mask(eclick > 0, 60.0)
+        em = em.mask((eclick == 0) & ((eopen if eopen is not None else 0) > 0), 10.0)
+        act_parts.append(em); act_w.append(0.30)
+    if c_art is not None:  # article reading (weight 0.40)
+        ar = pd.Series(0.0, index=idx)
+        ar = ar.mask(art >= 1, 30.0)
+        ar = ar.mask(art >= 5, 55.0)
+        ar = ar.mask(art >= 10, 75.0)
+        ar = ar.mask(art >= 20, 88.0)
+        ar = ar.mask(art >= 50, 100.0)
+        act_parts.append(ar); act_w.append(0.40)
+    if (c_inclick is not None) or (c_inopen is not None) or (c_eclick is not None):  # channel breadth (0.30)
+        ch = pd.Series(0.0, index=idx)
+        if c_eclick is not None:
+            ch = ch.mask((eclick > 0), 40.0)
+            ch = ch.mask((eclick == 0) & ((eopen if eopen is not None else 0) > 0), 10.0)
+        if c_inopen is not None:
+            ch = ch.mask(inopen > 0, 60.0)
+        if c_inclick is not None:
+            ch = ch.mask(inclick > 0, 100.0)
+        act_parts.append(ch); act_w.append(0.30)
+    comp1_ok = len(act_parts) > 0
+    if comp1_ok:
+        tw = sum(act_w)
+        act = sum(p * (w / tw) for p, w in zip(act_parts, act_w))
+        df["FCRS_Act"] = act.clip(0, 100).round(1)
+
+    # ── Component 2: Loyalty Depth ─────────────────────────────────────────
+    loy_parts = []
+    if c_mem is not None:
+        loy_parts.append(_membership_tier_score(df[c_mem]))
+    breadth = None
+    if (c_ptik is not None) or (c_pmem is not None) or (c_pret is not None):
+        cnt = pd.Series(0, index=idx)
+        for p in [ptik, pmem, pret]:
+            if p is not None:
+                cnt = cnt + p.astype(int)
+        breadth = cnt.map({0: 0.0, 1: 33.0, 2: 66.0, 3: 100.0}).fillna(100.0)
+    elif (has_tik is not None) or (has_ret is not None):
+        cnt = pd.Series(0, index=idx)
+        for p in [has_tik, has_ret]:
+            if p is not None:
+                cnt = cnt + p.astype(int)
+        breadth = cnt.map({0: 0.0, 1: 50.0, 2: 100.0}).fillna(0.0)
+    if breadth is not None:
+        loy_parts.append(breadth)
+    comp2_ok = len(loy_parts) > 0
+    if comp2_ok:
+        loy = sum(loy_parts) / len(loy_parts)
+        if (has_tik is not None) and (has_ret is not None):  # cross-sell bonus
+            loy = loy + (has_tik & has_ret).astype(float) * 20.0
+        df["FCRS_Loy"] = loy.clip(0, 100).round(1)
+
+    # ── Component 3: Ghost Risk (higher = worse; stored raw) ───────────────
+    comp3_ok = c_eopen is not None
+    if comp3_ok:
+        clicks = eclick if eclick is not None else pd.Series(0.0, index=idx)
+        rate = np.where(eopen > 0, clicks / eopen.replace(0, np.nan), 0.0)
+        rate = pd.Series(np.nan_to_num(rate), index=idx)
+        ghost = pd.Series(50.0, index=idx)
+        ghost = ghost.mask(rate > 0.05, 10.0)
+        ghost = ghost.mask((eopen > 20) & (rate < 0.01), 70.0)
+        ghost = ghost.mask((eopen > 50) & (clicks == 0), 90.0)
+        if c_camp is not None and any_purchase is not None:  # saturation
+            sat = (camp >= 100) & (camp <= 200) & (~any_purchase)
+            ghost = np.minimum(ghost + sat.astype(float) * 15.0, 100.0)
+            ghost = pd.Series(ghost, index=idx)
+        if any_purchase is not None:  # purchase confirmation caps ghost risk
+            ghost = ghost.mask(any_purchase, np.minimum(ghost, 20.0))
+        df["FCRS_Ghost"] = pd.Series(ghost, index=idx).clip(0, 100).round(1)
+
+    # ── Component 4: Membership Proximity ──────────────────────────────────
+    comp4_ok = c_mem is not None
+    if comp4_ok:
+        tier = df[c_mem].astype(str).str.strip().str.lower()
+        is_paid = tier.isin(["paid membership", "silver", "full member",
+                             "season ticket", "gold", "premium", "platinum", "vip", "life member"])
+        is_entry = tier.isin(_ENTRY_TIERS)
+        is_none = ~(is_paid | is_entry)
+        # Behavioural vector: prefer opens+articles, else engagement+tickets proxy
+        if (c_eopen is not None) and (c_art is not None):
+            v1, v2 = eopen, art
+        else:
+            v1 = eng if eng is not None else pd.Series(50.0, index=idx)
+            v2 = tik if tik is not None else pd.Series(0.0, index=idx)
+        entry_ref1 = v1[is_entry].mean() if is_entry.any() else max(float(v1.mean()), 1.0)
+        entry_ref2 = v2[is_entry].mean() if is_entry.any() else max(float(v2.mean()), 1.0)
+        paid_ref1 = v1[is_paid].mean() if is_paid.any() else max(float(v1.mean()), 1.0)
+        paid_ref2 = v2[is_paid].mean() if is_paid.any() else max(float(v2.mean()), 1.0)
+
+        def _prox(a, b, r1, r2):
+            r1 = r1 if r1 and r1 > 0 else 1.0
+            r2 = r2 if r2 and r2 > 0 else 1.0
+            return (((a / r1) + (b / r2)) / 2 * 100).clip(0, 100)
+
+        prox = pd.Series(0.0, index=idx)
+        prox = prox.mask(is_none, _prox(v1, v2, entry_ref1, entry_ref2))
+        prox = prox.mask(is_entry, _prox(v1, v2, paid_ref1, paid_ref2))
+        prox = prox.mask(is_paid, 100.0)
+        df["FCRS_Prox"] = prox.clip(0, 100).round(1)
+
+    # ── Assemble FCRS with proportional weight redistribution ──────────────
+    avail = {"FCRS_Act": comp1_ok, "FCRS_Loy": comp2_ok, "FCRS_Ghost": comp3_ok, "FCRS_Prox": comp4_ok}
+    weights = {"FCRS_Act": 0.35, "FCRS_Loy": 0.30, "FCRS_Ghost": 0.20, "FCRS_Prox": 0.15}
+    total_w = sum(weights[k] for k in weights if avail[k])
+    fcrs = pd.Series(0.0, index=idx)
+    if total_w > 0:
+        for k in weights:
+            if avail[k]:
+                contrib = (100.0 - df["FCRS_Ghost"]) if k == "FCRS_Ghost" else df[k]
+                fcrs = fcrs + contrib * (weights[k] / total_w)
+        df["FCRS"] = fcrs.clip(0, 100).round(1)
+    else:
+        df["FCRS"] = pd.Series(50.0, index=idx)  # no signals at all — neutral, flagged Minimal
+
+    df["FCRS_Band"] = df["FCRS"].apply(fcrs_band)
+    n_sig = int(sum(avail.values()))
+    df["FCRS_Signals"] = n_sig
+    df["FCRS_Coverage"] = fcrs_coverage_label(n_sig)
+    df["FCRS_Confidence"] = fcrs_confidence_label(n_sig)
+    # Low-signal flag: key behavioural signals absent
+    df.attrs["fcrs_low_signal"] = (c_eclick is None) and (
+        c_ptik is None and c_pmem is None and c_pret is None)
+
+    # ── Ghost Audience flag (only meaningful with email opens/clicks) ──────
+    if (c_eopen is not None) and (c_eclick is not None):
+        no_purchase = (~any_purchase) if any_purchase is not None else pd.Series(True, index=idx)
+        df["Ghost_Audience"] = (eopen > 50) & (eclick == 0) & no_purchase
+    else:
+        df["Ghost_Audience"] = pd.Series(False, index=idx)
+
+    return df
+
+
+def fcrs_available_components(df: pd.DataFrame):
+    """List of (contrib_field, label, weight) for components actually calculated."""
+    return [(col, name, w) for col, name, w in FCRS_SUBS
+            if col in df.columns and df[col].notna().any()]
+
+
+def fcrs_contribution(df: pd.DataFrame, col: str):
+    """A component's positive contribution to FCRS (Ghost Risk is inverted)."""
+    if col == "FCRS_Ghost":
+        return 100.0 - df["FCRS_Ghost"]
+    return df[col]
+
+
+def fcrs_driver_breakdown(df_or_seg: pd.DataFrame):
+    """Return (up_list[2], down_str|None) in plain English from average contributions."""
+    comps = fcrs_available_components(df_or_seg)
+    contrib = {col: float(fcrs_contribution(df_or_seg, col).mean()) for col, _, _ in comps}
+    if not contrib:
+        return [], None
+    ranked = sorted(contrib.items(), key=lambda kv: kv[1], reverse=True)
+    ups = [FCRS_DRIVER_TEXT[k][0] for k, v in ranked[:2] if v >= 45]
+    if not ups:
+        ups = [FCRS_DRIVER_TEXT[ranked[0][0]][0]]
+    down = None
+    low_k, low_v = ranked[-1]
+    if low_v <= 55:
+        down = FCRS_DRIVER_TEXT[low_k][1]
+    return ups[:2], down
+
+
+def fcrs_coverage_note(df: pd.DataFrame) -> str:
+    n = int(df["FCRS_Signals"].iloc[0]) if len(df) else 0
+    return f"Score calculated using {n} of 4 behavioural and commercial signals available in this dataset."
+
+
+def segment_fcrs_summary(df: pd.DataFrame, segment: str):
+    seg = df[df["Segment"] == segment]
+    if not len(seg):
+        return None
+    avg = float(seg["FCRS"].mean())
+    band = fcrs_band(avg)
+    ghost_level = "n/a"
+    if "FCRS_Ghost" in seg.columns and seg["FCRS_Ghost"].notna().any():
+        g = float(seg["FCRS_Ghost"].mean())
+        ghost_level = "high" if g >= 70 else "moderate" if g >= 45 else "low"
+    ups, down = fcrs_driver_breakdown(seg)
+    return {"avg": avg, "band": band, "ghost_level": ghost_level, "ups": ups, "down": down}
+
+
 # ── Commercial intelligence helpers ────────────────────────────────────────
 CORE_FOR_COMPLETENESS = [
     "Fan_ID", "Age", "Gender", "Last_Attended", "Tickets_Purchased",
@@ -660,15 +955,6 @@ def biggest_risk(df: pd.DataFrame):
     if at_risk < 1:
         at_risk = len(seg) * segment_avg_value(df, risk_seg) * churn_factor
     return risk_seg, max(at_risk, 1.0)
-
-
-def has_player_data(df: pd.DataFrame) -> bool:
-    """True only if Favourite_Player exists and has real values (not empty / all Unknown)."""
-    if "Favourite_Player" not in df.columns:
-        return False
-    s = df["Favourite_Player"].astype(str).str.strip().str.lower()
-    valid = s[~s.isin(["", "unknown", "nan", "none"])]
-    return len(valid) > 0
 
 
 def generate_executive_brief_pdf(df: pd.DataFrame) -> bytes:
@@ -803,16 +1089,41 @@ def render_commercial_outlook(df: pd.DataFrame):
                 f'<div style="font-size:11.5px;color:#8b8b95;margin-top:10px;">Strategic fit rating</div>')
         st.markdown(_card("Sponsor Opportunity", sponsor["category"], f"{sponsor['rating']}%", "#8B5CF6", meta), unsafe_allow_html=True)
 
+    # FCRS commercial-readiness row
+    avg_fcrs = df["FCRS"].mean()
+    fcrs_bnd = fcrs_band(avg_fcrs)
+    fcrs_cov = df["FCRS_Coverage"].iloc[0]
+    fcrs_sig = int(df["FCRS_Signals"].iloc[0])
+    bc = df["FCRS_Band"].value_counts()
+    cr, bd, pv = int(bc.get("Conversion Ready", 0)), int(bc.get("Building", 0)), int(bc.get("Passive", 0))
+    st.markdown('<div style="height:14px;"></div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="background:#0d0d14;border:1px solid #23232b;border-top:3px solid #3B82F6;border-radius:14px;'
+        f'padding:20px 24px;display:flex;align-items:center;gap:34px;flex-wrap:wrap;">'
+        f'<div><div style="font-size:10.5px;color:#8b8b95;text-transform:uppercase;letter-spacing:.09em;font-weight:700;">Avg Commercial Readiness (FCRS)</div>'
+        f'<div style="display:flex;align-items:center;gap:10px;margin-top:8px;">'
+        f'<div style="font-size:30px;font-weight:800;color:{FCRS_BAND_COLORS[fcrs_bnd]};">{avg_fcrs:.0f}</div>'
+        f'{fcrs_band_badge(fcrs_bnd)} {coverage_badge(fcrs_cov)}</div></div>'
+        f'<div style="display:flex;gap:26px;">'
+        f'<div><div style="font-size:22px;font-weight:800;color:#C8F135;">{cr:,}</div><div style="font-size:11px;color:#8b8b95;">Conversion Ready</div></div>'
+        f'<div><div style="font-size:22px;font-weight:800;color:#3B82F6;">{bd:,}</div><div style="font-size:11px;color:#8b8b95;">Building</div></div>'
+        f'<div><div style="font-size:22px;font-weight:800;color:#9ca3af;">{pv:,}</div><div style="font-size:11px;color:#8b8b95;">Passive</div></div>'
+        f'</div>'
+        f'<div style="font-size:11.5px;color:#7c7c86;margin-left:auto;max-width:230px;line-height:1.5;">Score calculated using {fcrs_sig} of 4 available signals.</div>'
+        f'</div>', unsafe_allow_html=True)
+
     # Prioritised opportunities table (dark, badge-enabled)
     st.markdown('<div class="section-header">Prioritised Opportunities</div>', unsafe_allow_html=True)
+    seg_band = {s: fcrs_band(float(df[df["Segment"] == s]["FCRS"].mean())) for s in df["Segment"].unique()}
     rows = [[
         f'<span style="color:#e5e7eb;font-weight:600;">{o["action"]}</span>',
         f'<span style="color:#C8F135;font-weight:700;">+&pound;{o["est_revenue"]:,.0f}</span>',
         confidence_badge(o["confidence"]),
         effort_badge(o["effort"]),
+        fcrs_band_badge(seg_band.get(o["segment"], "Passive")),
         o["tti"],
     ] for o in opps_sorted[:5]]
-    st.markdown(html_table(["Opportunity", "Revenue Upside", "Confidence", "Effort", "Time to Impact"], rows),
+    st.markdown(html_table(["Opportunity", "Revenue Upside", "Confidence", "Effort", "FCRS Band", "Time to Impact"], rows),
                 unsafe_allow_html=True)
 
     # Recommended action — executive conclusion of the page
@@ -889,6 +1200,164 @@ def render_upload_screen():
             """, unsafe_allow_html=True)
 
 
+# ── FCRS render helpers (used inside Fan Dashboard) ────────────────────────
+def _purchase_rate(df: pd.DataFrame) -> pd.Series:
+    """Per-fan boolean: has the fan made any purchase (explicit flags or proxies)."""
+    idx = df.index
+    parts = []
+    for name in ["PURCHASEDTICKETING", "PURCHASEDMEMBERSHIPS", "PURCHASEDRETAIL"]:
+        c = _find_col(df, name)
+        if c:
+            parts.append(_as_bool(df, c))
+    if not parts:
+        for c in [_find_col(df, "Tickets_Purchased"), _find_col(df, "Spend")]:
+            if c:
+                parts.append(pd.to_numeric(df[c], errors="coerce").fillna(0) > 0)
+    if not parts:
+        return pd.Series(False, index=idx)
+    out = parts[0]
+    for p in parts[1:]:
+        out = out | p
+    return out
+
+
+def render_fcrs_section(df: pd.DataFrame):
+    st.markdown('<div class="section-header">Fan Commercial Readiness (FCRS)</div>', unsafe_allow_html=True)
+    st.caption(fcrs_coverage_note(df))
+    if df.attrs.get("fcrs_low_signal"):
+        st.info("Limited-confidence score. Key behavioural signals (email clicks / purchase flags) are not available in this dataset.")
+
+    comps = fcrs_available_components(df)
+    cA, cB = st.columns([3, 2], gap="large")
+    with cA:
+        band_order = ["Conversion Ready", "Building", "Passive"]
+        bc = df["FCRS_Band"].value_counts()
+        counts = [int(bc.get(b, 0)) for b in band_order]
+        figb = go.Figure(go.Bar(
+            x=band_order, y=counts, text=counts, textposition="outside",
+            marker_color=[FCRS_BAND_COLORS[b] for b in band_order], marker_line_width=0))
+        figb.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#fff",
+            height=240, margin=dict(t=10, b=30, l=40, r=10), showlegend=False,
+            title="Fans by Readiness Band", title_font_size=13)
+        st.plotly_chart(figb, use_container_width=True, key="dash_fcrs_bands")
+        ups, down = fcrs_driver_breakdown(df)
+        with st.expander("What drives this score"):
+            st.markdown("**Top contributors**")
+            for u in ups:
+                st.markdown(f"- ▲ {u}")
+            if down:
+                st.markdown(f"- ▼ {down}")
+            st.markdown(f"**Component breakdown** ({len(comps)} of 4 signals available; weights redistributed)")
+            crows = [[name.replace(" (inverted)", ""), f"{int(w * 100)}%", f"{fcrs_contribution(df, col).mean():.0f}"]
+                     for col, name, w in comps]
+            st.markdown(html_table(["Component", "Base Weight", "Avg Contribution"], crows), unsafe_allow_html=True)
+    with cB:
+        st.markdown('<div style="font-size:12px;color:#8b8b95;margin-bottom:10px;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">Average sub-scores by band</div>', unsafe_allow_html=True)
+        headers = ["Band", "Fans"] + [name.replace(" (inverted)", "") for _, name, _ in comps]
+        rows = []
+        for b in ["Conversion Ready", "Building", "Passive"]:
+            seg = df[df["FCRS_Band"] == b]
+            if not len(seg):
+                continue
+            cells = [fcrs_band_badge(b), f"{len(seg):,}"]
+            for col, _, _ in comps:
+                cells.append(f"{fcrs_contribution(seg, col).mean():.0f}")
+            rows.append(cells)
+        st.markdown(html_table(headers, rows), unsafe_allow_html=True)
+
+    # Ghost audience alert (>5% of database)
+    ghost_pct = float(df["Ghost_Audience"].mean() * 100)
+    if ghost_pct > 5:
+        gc = int(df["Ghost_Audience"].sum())
+        eo_col = _find_col(df, "EMAIL_COUNTOPENS")
+        avg_opens = float(pd.to_numeric(df.loc[df["Ghost_Audience"], eo_col], errors="coerce").mean()) if eo_col else 0
+        st.markdown(
+            f'<div style="margin-top:14px;background:#2a1616;border:1px solid #5a2b2b;border-left:4px solid #EF4444;'
+            f'border-radius:12px;padding:16px 20px;">'
+            f'<div style="font-size:13px;font-weight:800;color:#f78186;text-transform:uppercase;letter-spacing:.05em;">⚠ Ghost Audience Alert</div>'
+            f'<div style="font-size:14px;color:#d1d5db;margin-top:8px;line-height:1.6;">'
+            f'<b>{gc:,} fans ({ghost_pct:.1f}%)</b> open emails consistently (avg {avg_opens:.0f} opens) '
+            f'but have never clicked or purchased. Their engagement metrics are misleading - '
+            f'they inflate open rates while contributing no commercial value.</div></div>',
+            unsafe_allow_html=True)
+
+
+def render_membership_ladder(df: pd.DataFrame):
+    st.markdown('<div class="section-header">Membership Ladder</div>', unsafe_allow_html=True)
+    memcol = _find_col(df, "MEMBERSHIP_CATEGORY", "Membership_Type")
+    if not memcol:
+        st.caption("No membership tier column in this dataset - ladder unavailable.")
+        return
+
+    def _bucket(v):
+        s = str(v).strip().lower()
+        if s in ["season ticket", "gold", "premium", "platinum", "vip", "life member"]:
+            return "Season Ticket / Gold / Premium"
+        if s in ["paid membership", "silver", "full member"]:
+            return "Paid Membership / Silver"
+        if s in ["spurs id", "bronze", "associate"]:
+            return "Spurs ID / Bronze"
+        return "No Membership"
+
+    order = ["No Membership", "Spurs ID / Bronze", "Paid Membership / Silver", "Season Ticket / Gold / Premium"]
+    tb = df[memcol].map(_bucket)
+    purchased = _purchase_rate(df)
+    spend_col = _find_col(df, "Spend")
+    rows = []
+    counts = []
+    for t in order:
+        seg_mask = tb == t
+        seg = df[seg_mask]
+        counts.append(int(len(seg)))
+        if not len(seg):
+            rows.append([f'<span style="color:#e5e7eb;font-weight:600;">{t}</span>', "0", "-", "-", "-"])
+            continue
+        prate = float(purchased[seg_mask].mean() * 100)
+        arev = float(pd.to_numeric(seg[spend_col], errors="coerce").fillna(0).mean()) if spend_col else None
+        afcrs = float(seg["FCRS"].mean())
+        rows.append([
+            f'<span style="color:#e5e7eb;font-weight:600;">{t}</span>',
+            f"{len(seg):,}",
+            f"{prate:.0f}%",
+            (f"&pound;{arev:,.0f}" if arev is not None else "-"),
+            f'<span style="color:{FCRS_BAND_COLORS[fcrs_band(afcrs)]};font-weight:700;">{afcrs:.0f}</span>',
+        ])
+    lc1, lc2 = st.columns([2, 3], gap="large")
+    with lc1:
+        figl = go.Figure(go.Bar(
+            x=counts, y=order, orientation="h", text=counts, textposition="outside",
+            marker_color=["#6B7280", "#8B5CF6", "#3B82F6", "#C8F135"], marker_line_width=0))
+        figl.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#fff",
+            height=260, margin=dict(t=10, b=30, l=10, r=20), showlegend=False,
+            yaxis=dict(autorange="reversed"))
+        st.plotly_chart(figl, use_container_width=True, key="dash_ladder")
+    with lc2:
+        st.markdown(html_table(["Tier", "Fans", "Purchase Rate", "Avg Revenue", "Avg FCRS"], rows), unsafe_allow_html=True)
+    st.caption("Each step up the ladder is a commercial upgrade path. Compare purchase rate and average FCRS to see where movement pays off.")
+
+
+def render_ghost_audience_group(df: pd.DataFrame):
+    """Ghost Audience shown as a distinct named group (separate from Dormant) when >3%."""
+    ghost_pct = float(df["Ghost_Audience"].mean() * 100)
+    if ghost_pct <= 3:
+        return
+    gc = int(df["Ghost_Audience"].sum())
+    eo_col = _find_col(df, "EMAIL_COUNTOPENS")
+    avg_opens = float(pd.to_numeric(df.loc[df["Ghost_Audience"], eo_col], errors="coerce").mean()) if eo_col else 0
+    st.markdown(
+        f'<div class="seg-card" style="border-left:4px solid #EF4444;margin-top:12px;">'
+        f'<div class="seg-title" style="color:#f78186;">👻 Ghost Audience</div>'
+        f'<div class="seg-size">{gc:,} fans &middot; {ghost_pct:.1f}% of database &middot; avg {avg_opens:.0f} email opens</div>'
+        f'<div style="font-size:13px;color:#c3c5cc;margin-top:12px;line-height:1.6;">'
+        f'These fans open emails consistently but have never clicked or purchased. Standard campaigns are not '
+        f'working for this group - and they are <b>not</b> Dormant: they are actively consuming, never converting.</div>'
+        f'<div style="font-size:13px;color:#C8F135;margin-top:10px;font-weight:600;">'
+        f'Recommended approach: test a single direct offer via a different channel rather than increasing email volume.</div>'
+        f'</div>', unsafe_allow_html=True)
+
+
 # ── Tab 1: Fan Dashboard ───────────────────────────────────────────────────
 def render_fan_dashboard(df: pd.DataFrame):
     seg_counts = df["Segment"].value_counts()
@@ -901,7 +1370,12 @@ def render_fan_dashboard(df: pd.DataFrame):
     avg_comm = df["Commercial_Score"].mean()
     top_count = seg_counts.iloc[0] if len(seg_counts) else 0
     fq_color = ATTENTION_COLORS[faqi_status]
-    k1, k2, k3, k4, k5 = st.columns(5, gap="medium")
+    avg_fcrs = df["FCRS"].mean()
+    fcrs_bnd = fcrs_band(avg_fcrs)
+    fcrs_cov = df["FCRS_Coverage"].iloc[0]
+    fcrs_sig = int(df["FCRS_Signals"].iloc[0])
+    fcrs_color = FCRS_BAND_COLORS[fcrs_bnd]
+    k1, k2, k3, k4, k5, k6 = st.columns(6, gap="small")
     with k1:
         st.markdown(kpi_card(f"{len(df):,}", "Total Fans"), unsafe_allow_html=True)
     with k2:
@@ -911,13 +1385,23 @@ def render_fan_dashboard(df: pd.DataFrame):
     with k4:
         st.markdown(kpi_card(f"{top_count:,}", "Top Segment", str(top_seg)), unsafe_allow_html=True)
     with k5:
-        # FAQI is a proprietary metric — visually distinct with a ring + status badge beside the score
+        # FAQI = attention. Green ring keeps it distinct.
         st.markdown(
             f'<div class="kpi-card" style="box-shadow:0 0 0 1px #C8F13544;border-color:#3a4718;">'
-            f'<div style="display:flex;align-items:center;gap:10px;">'
+            f'<div style="display:flex;align-items:center;gap:8px;">'
             f'<div class="kpi-value" style="color:{fq_color};">{avg_faqi:.0f}</div>'
             f'{attention_badge(faqi_status)}</div>'
-            f'<div class="kpi-label">Average FAQI &middot; Proprietary</div></div>',
+            f'<div class="kpi-label">Avg FAQI &middot; Attention</div></div>',
+            unsafe_allow_html=True)
+    with k6:
+        # FCRS = commercial readiness. Blue ring + band badge keeps it distinct from FAQI.
+        st.markdown(
+            f'<div class="kpi-card" style="box-shadow:0 0 0 1px #3B82F644;border-color:#1e3356;">'
+            f'<div style="display:flex;align-items:center;gap:8px;">'
+            f'<div class="kpi-value" style="color:{fcrs_color};">{avg_fcrs:.0f}</div>'
+            f'{fcrs_band_badge(fcrs_bnd)}</div>'
+            f'<div class="kpi-label">Avg FCRS &middot; Readiness</div>'
+            f'<div class="kpi-sub">Coverage: {fcrs_cov} ({fcrs_sig}/4)</div></div>',
             unsafe_allow_html=True)
 
     st.markdown('<div style="height:8px;"></div>', unsafe_allow_html=True)
@@ -965,6 +1449,16 @@ def render_fan_dashboard(df: pd.DataFrame):
 
     st.markdown("<br>", unsafe_allow_html=True)
 
+    # FCRS intelligence layer (commercial readiness)
+    render_fcrs_section(df)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Membership ladder
+    render_membership_ladder(df)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
     # Row 1: Segment donut + Journey funnel
     c1, c2 = st.columns(2)
     with c1:
@@ -983,6 +1477,8 @@ def render_fan_dashboard(df: pd.DataFrame):
             height=320,
         )
         st.plotly_chart(fig, use_container_width=True, key="dash_donut")
+        # Ghost Audience surfaces here as a distinct group (only when >3% and email data exists)
+        render_ghost_audience_group(df)
 
     with c2:
         st.markdown('<div class="section-header">Fan Journey Funnel</div>', unsafe_allow_html=True)
@@ -1161,10 +1657,11 @@ def render_campaign_intelligence(df: pd.DataFrame):
         roi = est_rev / investment if investment > 0 else 0.0
         conf_label, conf_pct = confidence_score(df, count)
         faqi = segment_faqi_summary(df, segment)
+        fcrs = segment_fcrs_summary(df, segment)
         briefs_data.append({
             "segment": segment, "count": count, "channel": channel,
             "conv": conv, "est_revenue": est_rev, "roi": roi,
-            "confidence": conf_label, "faqi": faqi,
+            "confidence": conf_label, "faqi": faqi, "fcrs": fcrs,
             "est_revenue_str": f"GBP {est_rev:,.0f}", "roi_str": f"{roi:.1f}x",
             **cfg,
         })
@@ -1187,6 +1684,22 @@ def render_campaign_intelligence(df: pd.DataFrame):
                 f'border-left:3px solid {fq_color};font-size:12.5px;color:#b7b9c0;">'
                 f'Segment FAQI <span style="color:{fq_color};font-weight:700;">{fq["avg"]:.0f} ({fq["status"]})</span> '
                 f'&middot; {ATTENTION_MEANING[fq["status"]]}</div>')
+
+        fcrs_html = ""
+        if b["fcrs"]:
+            fs = b["fcrs"]
+            fc = FCRS_BAND_COLORS[fs["band"]]
+            _approach = {
+                "Conversion Ready": "This group is ready to convert - a direct commercial offer should perform well.",
+                "Building": "Targeted nurture can move this group up - focus on the next clear commercial step.",
+                "Passive": "Standard email volume is unlikely to convert this group - consider a channel switch or suppression strategy.",
+            }[fs["band"]]
+            ghost_txt = "" if fs["ghost_level"] == "n/a" else f' Ghost Risk is {fs["ghost_level"]}.'
+            fcrs_html = (
+                f'<div style="margin-top:10px;padding:11px 15px;background:#101018;border-radius:10px;'
+                f'border-left:3px solid {fc};font-size:12.5px;color:#b7b9c0;">'
+                f'Segment FCRS <span style="color:{fc};font-weight:700;">{fs["avg"]:.0f} ({fs["band"]})</span>.'
+                f'{ghost_txt} {_approach}</div>')
 
         secondary = (
             '<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px 26px;margin-top:20px;'
@@ -1226,6 +1739,7 @@ def render_campaign_intelligence(df: pd.DataFrame):
                 </div>
             </div>
             {faqi_html}
+            {fcrs_html}
             {secondary}
         </div>
         """, unsafe_allow_html=True)
@@ -1366,6 +1880,30 @@ def render_audience_story(df: pd.DataFrame):
         top_mem = df["Membership_Type"].value_counts().index[0]
         none_pct = (df["Membership_Type"].str.lower() == "none").sum() / len(df) * 100
         beh_lines.append(f"Most common membership tier: {top_mem}. {none_pct:.0f}% have no membership.")
+    # FCRS behavioural signals
+    if "FCRS_Act" in df.columns and df["FCRS_Act"].notna().any():
+        avg_act = float(df["FCRS_Act"].mean())
+        interp = ("fans are actively clicking and reading content" if avg_act >= 60
+                  else "engagement is moderate, with room to grow" if avg_act >= 40
+                  else "engagement is largely passive, with opens but little action")
+        beh_lines.append(f"Average Commercial Activation is {avg_act:.0f} out of 100, meaning {interp}.")
+    cat_flags = []
+    for _nm in ["PURCHASEDTICKETING", "PURCHASEDMEMBERSHIPS", "PURCHASEDRETAIL"]:
+        _c = _find_col(df, _nm)
+        if _c:
+            cat_flags.append(_as_bool(df, _c))
+    if not cat_flags:
+        for _c in [_find_col(df, "Tickets_Purchased"), _find_col(df, "Spend")]:
+            if _c:
+                cat_flags.append(pd.to_numeric(df[_c], errors="coerce").fillna(0) > 0)
+    if cat_flags:
+        cats = sum(f.astype(int) for f in cat_flags)
+        single = int((cats == 1).sum())
+        multi = int((cats >= 2).sum())
+        beh_lines.append(f"{single:,} fans have purchased in only one revenue category versus {multi:,} across multiple - a clear cross-sell gap.")
+    ghost_pct = float(df["Ghost_Audience"].mean() * 100)
+    if ghost_pct > 5:
+        beh_lines.append(f"{int(df['Ghost_Audience'].sum()):,} fans ({ghost_pct:.0f}%) are a ghost audience: opening emails but never clicking or purchasing.")
     if not beh_lines:
         beh_lines.append("Upload Tickets_Purchased, Spend, and Channel_Preference to unlock behavioural intelligence.")
 
@@ -1399,21 +1937,21 @@ def render_audience_story(df: pd.DataFrame):
     recs = [
         {
             "title": "Reactivate Win Back segment immediately",
-            "rationale": f"{win_back_count:,} fans who have spent before are showing churn signals. A targeted two-for-one ticket offer sent via their preferred channel this week is the most direct route to recovering a meaningful share of this group.",
+            "rationale": f"{win_back_count:,} fans who have spent before are showing churn signals. A targeted two-for-one ticket offer sent via their preferred channel this week is the most direct route to recovering a meaningful share of this group. In FCRS terms, this lifts Commercial Activation and reduces Ghost Risk for a group that is going quiet.",
             "impact": f"Estimated revenue recovery: £{win_back_count * avg_ltv * 0.15:,.0f}",
             "confidence": confidence_score(df, win_back_count)[0],
             "effort": OPPORTUNITY_META["Win Back"]["effort"],
         },
         {
             "title": "Convert High Potential fans to membership",
-            "rationale": f"{high_pot_count:,} fans score high on engagement but have not committed commercially. An early bird membership offer with instalment payment will close the gap.",
+            "rationale": f"{high_pot_count:,} fans score high on engagement but have not committed commercially. An early bird membership offer with instalment payment will close the gap. In FCRS terms, this closes Membership Proximity for fans sitting just below the next tier.",
             "impact": f"Estimated new member revenue: £{high_pot_count * avg_ltv * 0.25:,.0f}",
             "confidence": confidence_score(df, high_pot_count)[0],
             "effort": OPPORTUNITY_META["High Potential"]["effort"],
         },
         {
             "title": "Protect VIP segment with a retention programme",
-            "rationale": f"{seg_counts_for_story(df).get('VIP', 0):,} VIP fans represent a disproportionate share of revenue. Even a 5% churn in this group has outsized commercial impact.",
+            "rationale": f"{seg_counts_for_story(df).get('VIP', 0):,} VIP fans represent a disproportionate share of revenue. Even a 5% churn in this group has outsized commercial impact. In FCRS terms, this protects the Loyalty Depth that makes these fans commercially ready.",
             "impact": "Preventing 5% VIP churn protects an estimated £{:,.0f} in LTV.".format(
                 df[df["Segment"] == "VIP"]["LTV_Estimate"].sum() * 0.05
             ),
@@ -1661,95 +2199,6 @@ def generate_sponsorship_pdf(pitch_score, female_pct, core_demo_pct, top_market,
     return bytes(pdf.output())
 
 
-# ── Tab 5: Player Influence ────────────────────────────────────────────────
-def render_player_influence(df: pd.DataFrame):
-    if not has_player_data(df):
-        st.markdown("""
-        <div class="story-section" style="text-align:center;padding:60px;">
-            <div class="story-title" style="justify-content:center;">Player Influence Locked</div>
-            <div class="story-body">Upload data with a <b>Favourite_Player</b> column to unlock Player Intelligence.</div>
-        </div>
-        """, unsafe_allow_html=True)
-        return
-
-    # Exclude blank / Unknown player values so rankings reflect real players only
-    _pl = df["Favourite_Player"].astype(str).str.strip()
-    valid = df[~_pl.str.lower().isin(["", "unknown", "nan", "none"])]
-
-    player_stats = valid.groupby("Favourite_Player").agg(
-        Fan_Count=("Favourite_Player", "count"),
-        Avg_Commercial=("Commercial_Score", "mean"),
-        Avg_Engagement=("Engagement_Score_Pct", "mean"),
-        Avg_LTV=("LTV_Estimate", "mean"),
-        Avg_Conversion=("Conversion_Probability", "mean"),
-    ).round(1).reset_index()
-
-    # Composite marketing score
-    player_stats["Marketing_Value"] = (
-        player_stats["Avg_Engagement"] * 0.35 +
-        player_stats["Avg_Commercial"] * 0.35 +
-        player_stats["Avg_Conversion"] * 0.30
-    ).round(1)
-
-    club_avg_eng = df["Engagement_Score_Pct"].mean()
-    player_stats["Sentiment_Lift"] = (player_stats["Avg_Engagement"] - club_avg_eng).round(1)
-    club_avg_conv = df["Conversion_Probability"].mean()
-    player_stats["Engagement_Multiplier"] = (player_stats["Avg_Engagement"] / max(club_avg_eng, 1)).round(2)
-    player_stats["Merch_Index"] = _pct_rank(player_stats["Avg_Commercial"]).round(0).astype(int)
-
-    player_stats = player_stats.sort_values("Marketing_Value", ascending=False).reset_index(drop=True)
-
-    # Top player card
-    top = player_stats.iloc[0]
-
-    def _pmetric(label, val, color):
-        return (f'<div><div style="font-size:10.5px;color:#8b8b95;text-transform:uppercase;letter-spacing:.07em;font-weight:600;">{label}</div>'
-                f'<div style="font-size:24px;font-weight:800;color:{color};margin-top:6px;">{val}</div></div>')
-
-    st.markdown(f"""
-    <div class="seg-card" style="border-top:3px solid #C8F135;margin-bottom:24px;padding:26px;">
-        <div class="seg-title">{top['Favourite_Player']}</div>
-        <div class="seg-size">{int(top['Fan_Count']):,} fans &middot; Top Marketing Value Player</div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin-top:20px;">
-            {_pmetric("Sentiment Lift", f"+{top['Sentiment_Lift']:.1f}", "#C8F135")}
-            {_pmetric("Engagement Multiplier", f"{top['Engagement_Multiplier']:.2f}x", "#3B82F6")}
-            {_pmetric("Merch Index", f"{int(top['Merch_Index'])}", "#8B5CF6")}
-            {_pmetric("Marketing Value", f"{top['Marketing_Value']:.0f}", "#C8F135")}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Bar chart - marketing value ranking
-    st.markdown('<div class="section-header">Player Commercial Influence Ranking</div>', unsafe_allow_html=True)
-    fig = px.bar(
-        player_stats.head(15), x="Marketing_Value", y="Favourite_Player",
-        orientation="h", color="Marketing_Value",
-        color_continuous_scale=["#1a1a2e", "#C8F135"],
-        labels={"Marketing_Value": "Marketing Value Score", "Favourite_Player": ""},
-    )
-    fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font_color="#fff", height=420, margin=dict(t=10, b=30, l=160, r=20),
-        yaxis=dict(autorange="reversed"), showlegend=False, coloraxis_showscale=False,
-    )
-    st.plotly_chart(fig, use_container_width=True, key="player_ranking")
-
-    # Full table
-    st.markdown('<div class="section-header">Full Player Sentiment Ranking</div>', unsafe_allow_html=True)
-    rows = [[
-        f'<span style="color:#e5e7eb;font-weight:600;">{r.Favourite_Player}</span>',
-        f'{int(r.Fan_Count):,}',
-        f'<span style="color:#C8F135;font-weight:700;">{r.Marketing_Value:.0f}</span>',
-        f'{r.Sentiment_Lift:+.1f}',
-        f'{r.Engagement_Multiplier:.2f}x',
-        f'{int(r.Merch_Index)}',
-        f'&pound;{r.Avg_LTV:,.0f}',
-    ] for r in player_stats.head(20).itertuples()]
-    st.markdown(html_table(
-        ["Player", "Fans", "Marketing Value", "Sentiment Lift", "Eng. Multiplier", "Merch Index", "Avg LTV"],
-        rows), unsafe_allow_html=True)
-
-
 # ── Main App ───────────────────────────────────────────────────────────────
 def main():
     # Init session state
@@ -1824,18 +2273,10 @@ def main():
         st.dataframe(df, use_container_width=True)
         return
 
-    has_player = has_player_data(df)
-
-    if has_player:
-        tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "Commercial Outlook", "Fan Dashboard", "Campaign Intelligence",
-            "Audience Story", "Sponsorship Intelligence", "Player Influence",
-        ])
-    else:
-        tab0, tab1, tab2, tab3, tab4 = st.tabs([
-            "Commercial Outlook", "Fan Dashboard", "Campaign Intelligence",
-            "Audience Story", "Sponsorship Intelligence",
-        ])
+    tab0, tab1, tab2, tab3, tab4 = st.tabs([
+        "Commercial Outlook", "Fan Dashboard", "Campaign Intelligence",
+        "Audience Story", "Sponsorship Intelligence",
+    ])
 
     with tab0:
         render_commercial_outlook(df)
@@ -1851,10 +2292,6 @@ def main():
 
     with tab4:
         render_sponsorship_intelligence(df)
-
-    if has_player:
-        with tab5:
-            render_player_influence(df)
 
 
 if __name__ == "__main__":
